@@ -1,0 +1,16 @@
+{
+    "submit": {
+        "type": "object",
+        "point":{
+            "startA": {"type":"string"},
+            "startB": {"type":"string"},
+            "endA": {"type":"string"},
+            "endB": {"type":"string"},
+            "startX": {"type":"string"},
+            "startY": {"type":"string"},
+            "endX": {"type":"string"},
+            "endY": {"type":"string"}
+        },
+        "required": ["startA", "startB", "endX", "endY"]
+    }
+}
