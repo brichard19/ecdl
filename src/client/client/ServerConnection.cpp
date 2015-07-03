@@ -2,20 +2,29 @@
 #include <stdio.h>
 #include <string.h>
 #include <iostream>
+#include <string>
 #include <curl/curl.h>
 #include "json/json.h"
 #include "ServerConnection.h"
 
-static std::string encodePointsMsg(PointsMsg &pointsMsg)
+static std::string to_string(int x)
+{
+    char str[10] = {0};
+
+    sprintf(str, "%d", x);
+
+    return std::string(str);
+}
+
+static std::string encodePoints(std::vector<DistinguishedPoint> points)
 {
     Json::Value root;
-    unsigned int count = pointsMsg.points.size();
+    unsigned int count = points.size();
     for(unsigned int i = 0; i < count; i++) {
-        root[i]["a"] = pointsMsg.points[i].a.toString(10);
-        root[i]["b"] = pointsMsg.points[i].b.toString(10);
-        root[i]["x"] = pointsMsg.points[i].x.toString(10);
-        root[i]["y"] = pointsMsg.points[i].y.toString(10);
-        root[i]["count"] = pointsMsg.points[i].count;
+        root[i]["a"] = points[i].a.toString(10);
+        root[i]["b"] = points[i].b.toString(10);
+        root[i]["x"] = points[i].x.toString(10);
+        root[i]["y"] = points[i].y.toString(10);
     }
 
     Json::StyledWriter writer;
@@ -90,6 +99,10 @@ static ParamsMsg decodeParametersMsg(std::string encoded)
 
 static size_t curlCallback(void *data, size_t size, size_t count, void *destPtr)
 {
+    if(data == NULL || count == 0) {
+        return 0;
+    }
+
     std::string *dest = (std::string *)destPtr;
     std::string dataString((char *)data, size * count);
 
@@ -122,7 +135,7 @@ ParamsMsg ServerConnection::getParameters(std::string id)
 
     std::string url = _url + "/params/" + id;
     std::string result;
-   
+    long httpCode = 0; 
     curl = curl_easy_init();
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -136,20 +149,28 @@ ParamsMsg ServerConnection::getParameters(std::string id)
         curl_easy_cleanup(curl);
         throw errorMsg;
     }
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    if(httpCode != 200) {
+        curl_easy_cleanup(curl);
+        throw std::string("HTTP error " + to_string(httpCode));
+    }
+
     curl_easy_cleanup(curl);
 
     return decodeParametersMsg(result);
 }
 
 
-void ServerConnection::submitPoints(std::string id, PointsMsg &pointsMsg)
+void ServerConnection::submitPoints(std::string id, std::vector<DistinguishedPoint> &points)
 {
-    std::string encodedPoints = encodePointsMsg(pointsMsg);
+    std::string encodedPoints = encodePoints(points);
 
     CURL *curl;
 
     std::string url = _url + "/submit/" + id;
     std::string result;
+    long httpCode = 0;
 
     curl = curl_easy_init();
 
@@ -168,17 +189,23 @@ void ServerConnection::submitPoints(std::string id, PointsMsg &pointsMsg)
         throw errorMsg;
     }
 
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    if(httpCode != 200) {
+        curl_easy_cleanup(curl);
+        throw std::string("HTTP error " + to_string(httpCode));
+    }
     curl_easy_cleanup(curl);
 }
 
-
 int ServerConnection::getStatus(std::string id)
 {
-    CURL *curl;
+    CURL *curl = NULL;
     CURLcode res;
+    long httpCode = 0;
 
     std::string url = _url + "/status/" + id;
-    std::string result;
+    std::string result = "";
 
     curl = curl_easy_init();
 
@@ -186,7 +213,6 @@ int ServerConnection::getStatus(std::string id)
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, NULL);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result);
-
     res = curl_easy_perform(curl);
 
     if(res != CURLE_OK) {
@@ -194,6 +220,18 @@ int ServerConnection::getStatus(std::string id)
         curl_easy_cleanup(curl);
         throw errorMsg;
     }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    if(httpCode == 404) {
+        curl_easy_cleanup(curl);
+        throw std::string("id does not exist");
+    } else if(httpCode != 200) {
+        std::string errorMsg("HTTP error " + to_string(httpCode));
+        curl_easy_cleanup(curl);
+        throw errorMsg;
+    }
+
     curl_easy_cleanup(curl);
     
     return decodeStatusMsg(result);

@@ -30,7 +30,6 @@ struct CallbackParameters {
     BigInteger bStart;
     BigInteger x;
     BigInteger y;
-    unsigned long long length;
 };
 
 typedef struct {

@@ -165,7 +165,6 @@ def submit_points(id):
         b = parseInt(content[i]['b'])
         x = parseInt(content[i]['x'])
         y = parseInt(content[i]['y'])
-        count = content[i]['count']
 
         #Check for collision
         dp = ctx.database.get(x, y)
@@ -184,13 +183,8 @@ def submit_points(id):
             else:
                 print("Point already exists in database. Rejecting.")
         else:
-            ctx.database.insert(a, b, x, y, count)
+            ctx.database.insert(a, b, x, y)
 
-    '''
-    if foundCollision == True:
-        print("Found collision. Stopping")
-        ctx.status = "stopped"
-    '''
     return ""
 
 '''
@@ -201,14 +195,6 @@ def verifyPoint(curve, g, q, endA, endB, endPoint):
     # Check that end point exists
     if not curve.verifyPoint(endPoint):
         return False
-
-    # Compute end point from A and B
-    #ag = curve.multiply(endA, g)
-    #bq = curve.multiply(endB, q)
-    #r = curve.add(ag, bq)
-
-    #if r.x != endPoint.x or r.y != endPoint.y:
-    #    return False
 
     return True
 

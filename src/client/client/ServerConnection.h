@@ -28,28 +28,27 @@ public:
     BigInteger ry[32];
 };
 
-typedef struct {
+class DistinguishedPoint {
+
+public:
+    DistinguishedPoint(BigInteger &a, BigInteger &b, BigInteger &x, BigInteger &y)
+    {
+        this->a = a;
+        this->b = b;
+        this->x = x;
+        this->y = y;
+    }
+
     BigInteger a;
     BigInteger b;
     BigInteger x;
     BigInteger y;
-    unsigned long long count;
-}DistinguishedPoint;
+};
 
 /**
  * Stores all the values that the client sends to the server when it
  * finds a distinguished point
  */
-class PointsMsg {
-
-public:
-    PointsMsg()
-    {
-
-    }
-    std::vector<DistinguishedPoint> points;
-
-};
 
 class ServerConnection {
 
@@ -61,7 +60,7 @@ public:
     ServerConnection(std::string, unsigned short port);
     int getStatus(std::string id);
     ParamsMsg getParameters(std::string id);
-    void submitPoints(std::string id, PointsMsg &pointsMsg);
+    void submitPoints(std::string id, std::vector<DistinguishedPoint> &points);
 };
 
 #endif

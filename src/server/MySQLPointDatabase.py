@@ -14,15 +14,15 @@ class MySQLPointDatabase(PointDatabase):
         return hex(n).rstrip("L").lstrip("0x") or "0"
 
     def createTableString(self):
-        return "CREATE TABLE IF NOT EXISTS POINTS(START_A VARCHAR(256) NOT NULL, START_B VARCHAR(256) NOT NULL, END_X VARCHAR(256) NOT NULL, END_Y VARCHAR(256) NOT NULL, COUNT BIGINT NOT NULL);";
+        return "CREATE TABLE IF NOT EXISTS POINTS(START_A VARCHAR(256) NOT NULL, START_B VARCHAR(256) NOT NULL, END_X VARCHAR(256) NOT NULL, END_Y VARCHAR(256) NOT NULL);";
 
-    def createInsertString(self, a, b, x, y, count):
+    def createInsertString(self, a, b, x, y):
         aHex = toHex(a)
         bHex = toHex(b)
         xHex = toHex(x)
         yHex = toHex(y)
 
-        return "INSERT INTO POINTS(START_A, START_B, END_X, END_Y, COUNT) VALUES('%s', '%s', '%s', '%s', '%d');" % (aHex, bHex, xHex, yHex, count)
+        return "INSERT INTO POINTS(START_A, START_B, END_X, END_Y) VALUES('%s', '%s', '%s', '%s');" % (aHex, bHex, xHex, yHex)
 
     def createReadString(self, x, y):
         xHex = toHex(x)
@@ -49,18 +49,18 @@ class MySQLPointDatabase(PointDatabase):
     '''
     Insert distinguished point into database
     '''
-    def insert(self, a, b, x, y, count):
+    def insert(self, a, b, x, y):
         db = self.connectToDB()
         cursor = db.cursor()
 
-        cursor.execute(self.createInsertString(a, b, x, y, count))
+        cursor.execute(self.createInsertString(a, b, x, y))
         db.commit()
         db.close()
 
     '''
     Read a distinguished point from the database.
     Returns a dictinary containing:
-    'a', 'b', 'x', 'y', 'count'
+    'a', 'b', 'x', 'y',
     '''
     def get(self, x, y):
         db = self.connectToDB()
@@ -77,7 +77,6 @@ class MySQLPointDatabase(PointDatabase):
         dp['b'] = int(results[1], 16)
         dp['x'] = int(results[2], 16)
         dp['y'] = int(results[3], 16)
-        dp['count'] = int(results[4])
         db.close()
 
         return dp

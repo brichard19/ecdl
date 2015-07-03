@@ -32,7 +32,6 @@ ECDLPParams _params;
 // problem id
 std::string _id;
 
-PointsMsg _points;
 Mutex _pointsMutex;
 
 ServerConnection *_serverConnection = NULL;
@@ -40,19 +39,23 @@ ServerConnection *_serverConnection = NULL;
 // Declared extern in client.h
 ClientConfig _config;
 
+std::vector<DistinguishedPoint> _pointsCache;
+
+bool _running = true;
+
 /**
  * Sends points to server
  */
 void sendPointsToServer()
 {
-    Logger::logInfo("Sending %d points to server", _points.points.size());
+    Logger::logInfo("Sending %d points to server", _pointsCache.size());
     try {
-        _serverConnection->submitPoints(_id, _points);
+        _serverConnection->submitPoints(_id, _pointsCache);
     } catch(std::string err) {
         printf("Error sending points to server: %s\n", err.c_str());
         return;
     }
-    _points.points.clear();
+    _pointsCache.clear();
 }
 
 bool verifyPoint(BigInteger &x, BigInteger &y)
@@ -66,27 +69,11 @@ bool verifyPoint(BigInteger &x, BigInteger &y)
 /**
  * Adds distinguished point to cache
  */
-void addPointToCache(BigInteger a, BigInteger b, BigInteger x, BigInteger y, unsigned long long count)
+void addPointToCache(BigInteger a, BigInteger b, BigInteger x, BigInteger y)
 {
-    // Encode results
-    DistinguishedPoint p;
-    p.a = a;
-    p.b = b;
-    p.x = x;
-    p.y = y;
-    p.count = count;
+    DistinguishedPoint p(a, b, x, y);
     _pointsMutex.grab();
-
-    _points.points.push_back(p);
-
-    // Only send after collecting enough points
-    if(_points.points.size() >= _config.pointCacheSize) {
-        try {
-            sendPointsToServer();
-        }catch(std::string err) {
-            printf("Error sending points to server: %s\n", err.c_str());
-        }
-    }
+    _pointsCache.push_back(p);
     _pointsMutex.release();
     
 }
@@ -103,10 +90,9 @@ void callback(struct CallbackParameters *p)
         printf("x: %s\n", p->x.toString(16).c_str());
         printf("y: %s\n", p->y.toString(16).c_str());
         printf("\n\n" );
-        exit(1);
         return;
     }
-    addPointToCache(p->aStart, p->bStart, p->x, p->y, p->length);
+    addPointToCache(p->aStart, p->bStart, p->x, p->y);
 }
 
 /**
@@ -117,7 +103,7 @@ bool getParameters(ECDLPParams &params, BigInteger *rx, BigInteger *ry)
     ParamsMsg paramsMsg;
 
     try {
-    paramsMsg = _serverConnection->getParameters(_id);
+        paramsMsg = _serverConnection->getParameters(_id);
     } catch(std::string e) {
         printf("Error: %s\n", e.c_str()); 
         return false;
@@ -142,6 +128,37 @@ bool getParameters(ECDLPParams &params, BigInteger *rx, BigInteger *ry)
 }
 
 /**
+ * Thread to poll the cache of distinguished points. Will send them to the server
+ * when there are enough
+ */
+void *sendPointsThread(void *p)
+{
+
+    while(_running) {
+        _pointsMutex.grab();
+
+        if(_pointsCache.size() >= _config.pointCacheSize) {
+            Logger::logInfo("Sending %d points to server", _pointsCache.size());
+            bool success = true;
+
+            try {
+                _serverConnection->submitPoints(_id, _pointsCache);
+            } catch(std::string err) {
+                success = false;
+                printf("Error sending points to server: %s. Will try again later\n", err.c_str());
+            }
+
+            if(success) {
+                _pointsCache.clear();
+            }
+        }
+        _pointsMutex.release();
+
+        sleep(30);
+    }
+}
+
+/**
  * Holding thread for running the context
  */
 void *runningThread(void *p)
@@ -157,8 +174,11 @@ void *runningThread(void *p)
  */
 void pollConnections()
 {
-    bool connected = false;
-    while(1) {
+    _running = true;
+
+    Thread pointsThread(sendPointsThread, NULL);
+
+    while(_running) {
 
         unsigned int status = 0;
       
@@ -170,14 +190,7 @@ void pollConnections()
             printf("Retrying in 60 seconds...\n");
             fflush(stdout); 
             sleep(60);
-            connected = false;
             continue;
-        }
-        printf("Server status: %d\n", status);
-
-        if(!connected) {
-            //printf("Server status: %d\n", status);
-            connected = true;
         }
 
         // If not currently running, then get the parameters and start
@@ -216,6 +229,7 @@ void pollConnections()
                 _context->stop();
             }
         }
+
         // Sleep 5 minutes
         sleep(300);
     }

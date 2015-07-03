@@ -16,7 +16,6 @@ static unsigned long *_rx;
 static unsigned long *_ry;
 static unsigned long *_diffBuf;
 static unsigned long *_chainBuf;
-static unsigned long long *_trailLength;
 static unsigned int _numPoints;
 static unsigned int _rPointMask;
 static unsigned long _mask;
@@ -30,7 +29,7 @@ static void (*_callback)(struct CallbackParameters *);
 static void printInt(unsigned long *x, int len)
 {
     for(int i = len - 1; i >= 0; i--) {
-        printf("%.16llx", x[i]);
+        printf("%.0lx", x[i]);
     }
 
     printf("\n");
@@ -117,9 +116,6 @@ void initThreadGlobals(ECDLPParams *params,
     _ry = new unsigned long[32 * pLen];
     _diffBuf = new unsigned long[numPoints * numThreads * pLen];
     _chainBuf = new unsigned long[numPoints * numThreads * pLen];
-
-    _trailLength = new unsigned long long[numPoints * numThreads];
-    memset(_trailLength, 0, sizeof(unsigned long long) * numPoints * numThreads);
 
     // Copy points
     for(int i = 0; i < numPoints * numThreads; i++) {
@@ -244,9 +240,6 @@ void doStep(int threadId)
         unsigned long newY[8];
         subModP(k, py, newY);
 
-        // Increment the length
-        _trailLength[i]++;
-
         //Check for distinguished point, call callback function if found
         if(checkMask(newX)) {
 
@@ -256,7 +249,6 @@ void doStep(int threadId)
                 cp.bStart = b[i];
                 cp.x = BigInteger(newX, _pLen);
                 cp.y = BigInteger(newY, _pLen);
-                cp.length = _trailLength[i];
                 _callback(&cp);
             }
 
@@ -265,7 +257,6 @@ void doStep(int threadId)
             BigInteger bNew;
             BigInteger xNew;
             BigInteger yNew;
-            _trailLength[i] = 0;
 
             // Generate new starting point
             generateNewPoint(&xNew, &yNew, &aNew, &bNew);

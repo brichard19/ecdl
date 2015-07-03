@@ -6,12 +6,13 @@
 #include <gmp.h>
 #include "gmpxx.h"
 
-// m value for barrett reduction
+// m value for Barrett reduction.
 static unsigned long _m[8] = {0};
 
 // Prime modulus
 static unsigned long _p[8] = {0};
 
+// 2 x prime modulus (used in Barrett reduction)
 static unsigned long _p2[8] = {0};
 
 // Modulus length in bits
@@ -19,6 +20,10 @@ static int _pBits;
 
 // Modulus length in words
 static int _pLen;
+
+// Length of p^2 in words
+static int _pSquaredLength;
+
 
 static inline void sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
@@ -82,7 +87,7 @@ static bool equalTo(const unsigned long *a, const unsigned long *b, unsigned int
     return true;
 }
 
-bool greaterThan(const unsigned long *a, const unsigned long *b)
+static bool greaterThan(const unsigned long *a, const unsigned long *b)
 {
     for(int i = _pLen - 1; i >= 0; i--) {
         if(a[i] > b[i]) {
@@ -117,7 +122,7 @@ static bool greaterThanEqualTo(const unsigned long *a, const unsigned long *b, u
 static void printInt(const unsigned long *x, int len)
 {
     for(int i = len - 1; i >= 0; i--) {
-        printf("%.16llx", x[i]);
+        printf("%.0lx", x[i]);
     }
     printf("\n");
     
@@ -125,9 +130,9 @@ static void printInt(const unsigned long *x, int len)
 
 /**
  * Performs reduction mod P using the barrett reduction. It is assumed that
- * the product is no greater than (p-1)^2
+ * the product is no greater than (p-1)^2.
  */
-static inline void reduceModP(const unsigned long *x, unsigned long *c)
+static void reduceModP(const unsigned long *x, unsigned long *c)
 {
     unsigned long q[10] =  {0};
     unsigned long xm[10] = {0};
@@ -135,7 +140,6 @@ static inline void reduceModP(const unsigned long *x, unsigned long *c)
     // Get the high bits of x
     unsigned long xHigh[10] = {0};
    
-    // Collect high bits of x by shifting right
     int rShift = (_pBits) % WORD_LENGTH_BITS;
     int lShift = WORD_LENGTH_BITS - rShift;
     unsigned long mask = ((unsigned long)~0) >> (WORD_LENGTH_BITS - ((_pBits) % WORD_LENGTH_BITS));
@@ -146,6 +150,8 @@ static inline void reduceModP(const unsigned long *x, unsigned long *c)
 
     // Multiply by m
     mul(xHigh, _m, xm);
+
+    // Get the high bits of x * m. 
     for(int i = 0; i < _pLen; i++) {
         q[ i ] = (xm[ _pLen - 1 + i ] >> rShift) | (xm[ _pLen + i ] << lShift);
     }
@@ -158,8 +164,14 @@ static inline void reduceModP(const unsigned long *x, unsigned long *c)
     unsigned long r[10] = {0};
     sub2(x, qp, r);
 
+    // The trick here is that instead of multiplying xm by p, we multiplied only the top
+    // half by p. This still works because the lower bits of the product are discarded anyway.
+    // But it could have been the case that there was a carry from the multiplication operation on
+    // the lower bits, which will result in r being >= 2p because in that case we would be
+    // doing x - (q-1) *p instead of x - q*p. So we need to check for >= 2p and >= p. Its more checks
+    // but saves us from doing a multiplication.
     if(greaterThanEqualTo(r, _p2, _pLen)) {
-        sub(r, _p2, c);
+        sub2(r, _p2, c);
     } else if(greaterThanEqualTo(r, _p, _pLen)) {
         sub(r, _p, c);
     } else {

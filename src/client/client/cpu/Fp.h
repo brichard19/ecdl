@@ -26,8 +26,6 @@ void squareModP(const unsigned long *a, unsigned long *aSquared);
  */
 void multiplyModP(const unsigned long *a, const unsigned long *b, unsigned long *product);
 
-bool greaterThan(const unsigned long *a, const unsigned long *b);
-
 /**
  * Initializes the prime field library
  */

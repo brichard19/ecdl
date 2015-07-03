@@ -3,6 +3,6 @@
     "server_port": 9999,
 
     "point_cache_size": 32,
-    "cpu_threads": 4,
+    "cpu_threads": 1,
     "cpu_points_per_thread": 1024
 }

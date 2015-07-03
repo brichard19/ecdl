@@ -15,11 +15,13 @@ It is still a very new project and probalby has many bugs.
 
 Currently builds on Linux using make.
 
-Some tools and libraries required:
+Client:
 
 * g++
 * GNU Multiprecision Arithmetic Library ([https://gmplib.org/](https://gmplib.org/))
 * libcurl ([http://curl.haxx.se/](http://curl.haxx.se/))
+
+Server:
 * python 2.7 with flask and MySQLdb
 * mysql database
 
@@ -30,6 +32,10 @@ Optional:
 ### Building the client
 
 To build the CPU client, run `make client_cpu` in the `src/client` directory
+
+```
+# make client_cpu
+```
 
 There is a GPU client using CUDA, but it is currently broken because it only accepts values in montgomery form. The rest of the code was recently switched to use the Barrett reduction, so they are incompatible.
 
@@ -76,7 +82,9 @@ params:{
 }
 ```
 
-There is a sage script in the scripts directory can generate random parameters and write them to the file for you
+There is a sage script in the scripts directory can generate random parameters and write them to the file for you.
+
+For example, to generate a curve with a 56-bit prime modulus, run:
 
 ```
 # ./gencurve.sh 56 ecp56.json
@@ -85,7 +93,7 @@ There is a sage script in the scripts directory can generate random parameters a
 Once you have your JSON file, you can upload it to the server using the create.sh script. As arguments it takes the json file and the name of the job
 
 ```
-./create.sh ecp63.json ecp56
+./create.sh ecp56.json ecp56
 ```
 
 #### Running the client
@@ -107,7 +115,7 @@ There is a `settings.json` file that needs to be edited
 After a job has been set up on the server, the client can be run. It takes the job name as its argument:
 
 ```
-# ./client-cpu ecp63
+# ./client-cpu ecp56
 ```
 
 
