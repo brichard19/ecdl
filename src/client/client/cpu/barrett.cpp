@@ -28,7 +28,6 @@ static int _pSquaredLength;
 static inline void sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
     #ifdef _X86
-        #error "x86 not supported"
         x86_sub160(a, b, diff);
     #else
         mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);

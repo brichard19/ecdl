@@ -1,14 +1,14 @@
-#include"threads.h"
-#include<stdio.h>
-#include<stdlib.h>
-#include<errno.h>
-#include<string.h>
+#include "threads.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
 
 Thread::Thread()
 {
 }
 
-Thread::Thread( THREAD_FUNCTION (*routine)(VOID_PTR), void *arg)
+Thread::Thread(THREAD_FUNCTION (*routine)(VOID_PTR), void *arg)
 {
 	int r = pthread_create(&this->handle, NULL, routine, arg);
 

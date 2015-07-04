@@ -1,13 +1,10 @@
-/*File: threads_win32.c
- *Description: Code for portable Win32 threads
- */
-#include"libthread.h"
+#include "threads.h"
 
 Thread::Thread()
 {
 }
 
-Thread::Thread( DWORD (*routine)(LPVOID), void *arg)
+Thread::Thread(DWORD (*routine)(LPVOID), void *arg)
 {
 	this->handle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)routine, arg, 0, &this->id);
 
@@ -41,7 +38,7 @@ Mutex::~Mutex()
 
 void Mutex::grab()
 {
-	if( WaitForSingleObject( mutex->handle, INFINITE ) != 0 ) {
+	if(WaitForSingleObject( mutex->handle, INFINITE) != 0) {
         throw "Error waiting for mutex";	
     }
 }
