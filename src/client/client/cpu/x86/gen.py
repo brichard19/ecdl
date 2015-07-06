@@ -144,27 +144,51 @@ def gen_multiply(bits):
     print("")
 
 
-    for i in range(words):
+    # Do b[0] * a[0] to a[n-1]. This is a separate loop because we move the
+    # result to the buffer, not add them
+    print("    mov ebx, 0")
+    for j in range(0, words):
+        print("    mov eax, dword [ecx + %d]" % (0))
+        print("    mul dword [esi + %d]" % (j*4))
+        print("    add eax, ebx")
+        print("    mov ebx, edx")
+        print("    mov dword [edi + %d], eax" % (j*4))
+        print("    adc ebx, 0")
+
+    print("    mov dword [edi + %d], ebx" % (words*4))
+
+    
+    for i in range(1, words):
+
+        #Reset high word to 0
+        print("    mov ebx, 0")
+
         for j in range(words):
-            print("    ; a[%d] * b[%d]" % (i,j))
 
-            if j == 0:
-                print("    mov eax, dword [ecx + %d]" % (i*4))
-                print("    mul dword [esi + %d]" % (j*4))
-                print("    add dword [edi + %d], eax" % ((i+j)*4));
-                print("    adc edx, 0")
-                print("    mov ebx, edx")
-            else:
-                print("    mov eax, dword [ecx + %d]" % (i*4))
-                print("    mul dword [esi + %d]" % (j*4))
-                print("    add eax, ebx")
-                print("    adc edx, 0")
-                print("    add dword [edi + %d], eax" % ((i+j)*4))
-                print("    adc edx, 0")
-                print("    mov ebx, edx")
+            # Read b[i] from memory
+            print("    mov eax, dword [ecx + %d]" % (i*4))
 
-            print("")
+            # Multiply by a[j]
+            print("    mul dword [esi + %d]" % (j*4))
+
+            # add old high to new low word
+            print("    add eax, ebx")
+
+            # add the carry
+            print("    adc edx, 0")
+
+            # store new high word in ebx
+            print("    mov ebx, edx")
+
+            # add new low + old high to to s[i + j]
+            print("    add dword [edi + %d], eax" % ((i+j)*4))
+
+            # add the carry to the new high word
+            print("    adc ebx, 0")
+
+        # Write high word to the end
         print("    mov dword [edi + %d], ebx" % ((i+words)*4))
+    
 
     print("    pop esi")
     print("    pop edi")
@@ -173,6 +197,80 @@ def gen_multiply(bits):
     print("    pop ebp")
     print("    ret")
     print("")
+
+def gen_square(bits):
+    words = bits / 32
+
+    print("global x86_square" + str(bits))
+    print("x86_square" + str(bits) + ":")
+    print("")
+    print("    push ebp")
+    print("    mov ebp, esp")
+    print("    push ebx")
+    print("    push edi")
+    print("    push esi")
+    print("")
+   
+    print("    mov esi, dword [ebp + 8]")
+    #print("    mov ecx, dword [ebp + 12]")
+    print("    mov edi, dword [ebp + 12]")
+    print("")
+
+
+    # Do b[0] * a[0] to a[n-1]. This is a separate loop because we move the
+    # result to the buffer, not add them
+    print("    mov ebx, 0")
+    for j in range(0, words):
+        print("    mov eax, dword [esi + %d]" % (0))
+        print("    mul dword [esi + %d]" % (j*4))
+        print("    add eax, ebx")
+        print("    mov ebx, edx")
+        print("    mov dword [edi + %d], eax" % (j*4))
+        print("    adc ebx, 0")
+
+    print("    mov dword [edi + %d], ebx" % (words*4))
+
+    
+    for i in range(1, words):
+
+        #Reset high word to 0
+        print("    mov ebx, 0")
+
+        for j in range(words):
+
+            # Read b[i] from memory
+            print("    mov eax, dword [esi + %d]" % (i*4))
+
+            # Multiply by a[j]
+            print("    mul dword [esi + %d]" % (j*4))
+
+            # add old high to new low word
+            print("    add eax, ebx")
+
+            # add the carry
+            print("    adc edx, 0")
+
+            # store new high word in ebx
+            print("    mov ebx, edx")
+
+            # add new low + old high to to s[i + j]
+            print("    add dword [edi + %d], eax" % ((i+j)*4))
+
+            # add the carry to the new high word
+            print("    adc ebx, 0")
+
+        # Write high word to the end
+        print("    mov dword [edi + %d], ebx" % ((i+words)*4))
+    
+
+    print("    pop esi")
+    print("    pop edi")
+    print("    pop ebx")
+    print("    mov esp, ebp")
+    print("    pop ebp")
+    print("    ret")
+    print("")
+
 
 # Generate multiplication function
 def main():
@@ -189,13 +287,15 @@ def main():
         gen_sub(bits)
     elif method == "mul":
         gen_multiply(bits)
+    elif method == "square":
+        gen_square(bits)
     elif method == "cmpgte":
         gen_cmpgt(bits)
     elif method == "mul_low":
         gen_multiply_low(bits)
     else:
         print("Invalid method")
-        exit()
+        exit(1)
 
 if __name__ == "__main__":
     main()

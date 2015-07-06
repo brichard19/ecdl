@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "Fp.h"
-#include "x86.h"
 #include "BigInteger.h"
 #include <gmp.h>
 #include "gmpxx.h"
+
+#ifdef _X86
+#include "x86.h"
+#endif
 
 // m value for Barrett reduction.
 static unsigned long _m[8] = {0};
@@ -24,56 +27,36 @@ static int _pLen;
 // Length of p^2 in words
 static int _pSquaredLength;
 
-
-static inline void sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
+static void gmp_sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
-    #ifdef _X86
-        x86_sub160(a, b, diff);
-    #else
-        mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
-    #endif
+    mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
 }
 
-static inline void sub2(const unsigned long *a, const unsigned long *b, unsigned long *diff)
+static void gmp_sub2(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
-    mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen*2);
+    mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen+1);
 }
 
-static inline void add(const unsigned long *a, const unsigned long *b, unsigned long *sum)
+static void gmp_add(const unsigned long *a, const unsigned long *b, unsigned long *sum)
 {
-    #ifdef _X86
-        x86_add160(a, b, diff);
-    #else
-        mpn_add_n((long unsigned int *)sum, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
-    #endif
+    mpn_add_n((long unsigned int *)sum, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
 }
 
-static inline void mul(const unsigned long *a, const unsigned long *b, unsigned long *product)
+static void gmp_mul(const unsigned long *a, const unsigned long *b, unsigned long *product)
 {
-    #ifdef _X86
-        x86_mul160(a, b, product);
-    #else
-        mpn_mul_n((long unsigned int *)product, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
-    #endif
+    mpn_mul_n((long unsigned int *)product, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
 }
 
-static inline void mul_low(const unsigned long *a, const unsigned long *b, unsigned long *product)
+static void gmp_square(const unsigned long *a, unsigned long *product)
 {
-    #ifdef _X86
-        x86_mul160(a, b, product);
-    #else
-        mpn_mul_n((long unsigned int *)product, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
-    #endif
+    mpn_sqr((long unsigned int*)product, (long unsigned int *)a, _pLen);
 }
 
-static inline void square(const unsigned long *a, unsigned long *product)
-{
-    #ifdef _X86
-        x86_mul160(a, a, product);
-    #else
-        mpn_sqr((long unsigned int*)product, (long unsigned int *)a, _pLen);
-    #endif
-}
+static void (*sub)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_sub;
+static void (*sub2)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_sub2;
+static void (*add)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_add;
+static void (*mul)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_mul;
+static void (*square)(const unsigned long *, unsigned long*) = gmp_square;
 
 static bool equalTo(const unsigned long *a, const unsigned long *b, unsigned int len)
 {
@@ -196,6 +179,47 @@ void initFp(BigInteger &p)
     p2.getWords(_p2, p2.getWordLength());
 
     m.getWords(_m, _pLen);
+
+#ifdef _X86
+    if(_pBits <= 64) {
+        add = x86_add64;
+        sub = x86_sub64;
+        sub2 = x86_sub96;
+        mul = x86_mul64;
+        square = x86_square64;
+    } else if(_pBits <= 96) {
+        add = x86_add96;
+        sub = x86_sub96;
+        sub2 = x86_sub128;
+        mul = x86_mul96;
+        square = x86_square96;
+    } else if(_pBits <= 128) {
+        add = x86_add128;
+        sub = x86_sub128;
+        sub2 = x86_sub160;
+        mul = x86_mul128;
+        square = x86_square128;
+    } else if(_pBits <= 160) {
+        add = x86_add160;
+        sub = x86_sub160;
+        sub2 = x86_sub192;
+        mul = x86_mul160;
+        square = x86_square160;
+    } else if(_pBits <= 192) {
+        add = x86_add192;
+        sub = x86_sub192;
+        sub2 = x86_sub224;
+        mul = x86_mul192;
+        square = x86_square192;
+    } else if(_pBits <= 224) {
+        add = x86_add224;
+        sub = x86_sub224;
+        sub2 = x86_sub256;
+        mul = x86_mul224;
+        square = x86_square224;
+    }
+#endif
+
 }
 
 void subModP(const unsigned long *a, const unsigned long *b, unsigned long *diff)

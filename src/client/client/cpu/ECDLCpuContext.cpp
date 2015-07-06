@@ -119,7 +119,7 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
 {
     int numThreads = _numThreads;
     int pointsPerThread = _pointsPerThread;
-    int iterations = 1000000;
+    int iterations = 100000;
 
     BenchmarkThreadParams *params = new BenchmarkThreadParams[numThreads];
     Thread *threads = new Thread[numThreads];
