@@ -156,6 +156,8 @@ void *sendPointsThread(void *p)
 
         sleep(30);
     }
+
+    return NULL;
 }
 
 /**

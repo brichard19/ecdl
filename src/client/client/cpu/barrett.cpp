@@ -10,76 +10,60 @@
 #endif
 
 // m value for Barrett reduction.
-static unsigned long _m[8] = {0};
+static FpElement _m = {0};
 
 // Prime modulus
-static unsigned long _p[8] = {0};
+static FpElement _p = {0};
 
 // 2 x prime modulus (used in Barrett reduction)
-static unsigned long _p2[8] = {0};
+static FpElement _p2 = {0};
 
 // Modulus length in bits
 static int _pBits;
 
 // Modulus length in words
-static int _pLen;
+static int _pWords;
 
-// Length of p^2 in words
-static int _pSquaredLength;
+// Length of m in words
+static int _mWords;
 
-static void gmp_sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
+static int gmp_sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
-    mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
+    return mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pWords);
 }
 
-static void gmp_sub2(const unsigned long *a, const unsigned long *b, unsigned long *diff)
+static int gmp_sub2(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
-    mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pLen+1);
+    return mpn_sub_n((long unsigned int *)diff, (const long unsigned int *)a, (const long unsigned int *)b, _pWords + 1);
 }
 
 static void gmp_add(const unsigned long *a, const unsigned long *b, unsigned long *sum)
 {
-    mpn_add_n((long unsigned int *)sum, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
+    mpn_add_n((long unsigned int *)sum, (const long unsigned int *)a, (const long unsigned int *)b, _pWords);
 }
 
 static void gmp_mul(const unsigned long *a, const unsigned long *b, unsigned long *product)
 {
-    mpn_mul_n((long unsigned int *)product, (const long unsigned int *)a, (const long unsigned int *)b, _pLen);
+    mpn_mul_n((long unsigned int *)product, (const long unsigned int *)a, (const long unsigned int *)b, _pWords);
 }
 
 static void gmp_square(const unsigned long *a, unsigned long *product)
 {
-    mpn_sqr((long unsigned int*)product, (long unsigned int *)a, _pLen);
+    mpn_sqr((long unsigned int*)product, (long unsigned int *)a, _pWords);
 }
 
-static void (*sub)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_sub;
-static void (*sub2)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_sub2;
+static int (*sub)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_sub;
+static int (*sub2)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_sub2;
 static void (*add)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_add;
 static void (*mul)(const unsigned long *, const unsigned long *, unsigned long*) = gmp_mul;
 static void (*square)(const unsigned long *, unsigned long*) = gmp_square;
 
-static bool equalTo(const unsigned long *a, const unsigned long *b, unsigned int len)
+void printInt(const unsigned long *x, int len)
 {
     for(int i = len - 1; i >= 0; i--) {
-        if(a[i] != b[i]) {
-            return false;
-        }
+        printf("%.16lx", x[i]);
     }
-
-    return true;
-}
-
-static bool greaterThan(const unsigned long *a, const unsigned long *b)
-{
-    for(int i = _pLen - 1; i >= 0; i--) {
-        if(a[i] > b[i]) {
-            return true;
-        } else if(a[i] < b[i]) {
-            return false;
-        }
-    }
-
-    return false;
+    printf("\n");
 }
 
 /**
@@ -98,52 +82,57 @@ static bool greaterThanEqualTo(const unsigned long *a, const unsigned long *b, u
     return true;
 }
 
-/**
- * Prints integer to screen in hex format
- */
-static void printInt(const unsigned long *x, int len)
+static void rightShift(const unsigned long *in, unsigned long *out)
 {
-    for(int i = len - 1; i >= 0; i--) {
-        printf("%.0lx", x[i]);
+    int rShift = (_pBits) % WORD_LENGTH_BITS;
+    int lShift = WORD_LENGTH_BITS - rShift;
+
+    if(rShift > 0) {
+        for(int i = 0; i < _pWords; i++) {
+            out[ i ] = (in[ _pWords - 1 + i ] >> rShift) | (in[ _pWords + i ] << lShift);
+        }
+    } else {
+        for(int i = 0; i < _pWords; i++) {
+            out[ i ] = in[_pWords + i];
+        }
     }
-    printf("\n");
-    
 }
 
 /**
  * Performs reduction mod P using the barrett reduction. It is assumed that
- * the product is no greater than (p-1)^2.
+ * the product is no greater than (p-1)^2
  */
 static void reduceModP(const unsigned long *x, unsigned long *c)
 {
-    unsigned long q[10] =  {0};
-    unsigned long xm[10] = {0};
+    FpElement q;
+    FpElement xm;
 
     // Get the high bits of x
-    unsigned long xHigh[10] = {0};
-   
-    int rShift = (_pBits) % WORD_LENGTH_BITS;
-    int lShift = WORD_LENGTH_BITS - rShift;
-    unsigned long mask = ((unsigned long)~0) >> (WORD_LENGTH_BITS - ((_pBits) % WORD_LENGTH_BITS));
+    FpElement xHigh;
 
-    for(int i = 0; i < _pLen; i++) {
-        xHigh[ i ] = (x[ _pLen - 1 + i ] >> rShift) | (x[ _pLen + i ] << lShift);
-    }
+    rightShift(x, xHigh);
 
     // Multiply by m
     mul(xHigh, _m, xm);
 
-    // Get the high bits of x * m. 
-    for(int i = 0; i < _pLen; i++) {
-        q[ i ] = (xm[ _pLen - 1 + i ] >> rShift) | (xm[ _pLen + i ] << lShift);
+    // Get the high bits of xHigh * m. 
+    rightShift(xm, q);
+
+    // It is possible that m is 1 bit longer than p. If p ends on a word boundry then m will
+    // be 1 word longer than p. To avoid doing an extra multiplication when doing mHigh * m
+    // (because the 1 would be in a separate word), add xHigh to the result after shifting
+    if(_mWords > _pWords) {
+        FpElement tmp;
+        add(q, xHigh, tmp);
+        memcpy(q, tmp, sizeof(FpElement));
     }
 
     // Multiply by p
-    unsigned long qp[10] = {0};
+    FpElement qp;
     mul(q, _p, qp);
 
     // Subtract from x
-    unsigned long r[10] = {0};
+    FpElement r;
     sub2(x, qp, r);
 
     // The trick here is that instead of multiplying xm by p, we multiplied only the top
@@ -152,14 +141,12 @@ static void reduceModP(const unsigned long *x, unsigned long *c)
     // the lower bits, which will result in r being >= 2p because in that case we would be
     // doing x - (q-1) *p instead of x - q*p. So we need to check for >= 2p and >= p. Its more checks
     // but saves us from doing a multiplication.
-    if(greaterThanEqualTo(r, _p2, _pLen)) {
+    if(greaterThanEqualTo(r, _p2, _pWords+1)) {
         sub2(r, _p2, c);
-    } else if(greaterThanEqualTo(r, _p, _pLen)) {
+    } else if(greaterThanEqualTo(r, _p, _pWords+1)) {
         sub(r, _p, c);
     } else {
-        for(int i = 0; i < _pLen; i++) {
-            c[i] = r[i];
-        }
+        memcpy(c, r, sizeof(unsigned long)*_pWords);
     }
 }
 
@@ -169,16 +156,19 @@ void initFp(BigInteger &p)
 
     // Precompute _m
     _pBits = p.getBitLength();
+    _pWords = p.getWordLength();
 
-    _pLen = p.getWordLength();
+    // k = 4^n
     BigInteger k = BigInteger(2).pow(2 * _pBits);
     BigInteger m = k / p;
 
     // Convert P and M to words
-    p.getWords(_p, _pLen);
+    p.getWords(_p, _pWords);
     p2.getWords(_p2, p2.getWordLength());
 
-    m.getWords(_m, _pLen);
+    _mWords = m.getWordLength();
+
+    m.getWords(_m, _mWords);
 
 #ifdef _X86
     if(_pBits <= 64) {
@@ -224,16 +214,17 @@ void initFp(BigInteger &p)
 
 void subModP(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
-    sub(a, b, diff);
+    int borrow = sub(a, b, diff);
 
-    if(diff[_pLen-1] & ((unsigned long)0x01 << (WORD_LENGTH_BITS-1)) ) {
+    // Check for negative
+    if(borrow) {
         add(diff, _p, diff);
     }
 }
 
 void multiplyModP(const unsigned long *a, const unsigned long *b, unsigned long *c)
 {
-    unsigned long product[10];
+    FpElement product;
 
     mul(a, b, product);
     reduceModP(product, c);
@@ -241,7 +232,7 @@ void multiplyModP(const unsigned long *a, const unsigned long *b, unsigned long 
 
 void squareModP(const unsigned long *a, unsigned long *aSquared)
 {
-    unsigned long product[10]={0};
+    FpElement product;
 
     square(a, product);
     reduceModP(product, aSquared);
@@ -257,13 +248,13 @@ void inverseModP(const unsigned long *input, unsigned long *inverse)
     mpz_init(aInv);
     mpz_init(p);
 
-    mpz_import(a, _pLen, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_LITTLE, 0, input);
-    mpz_import(p, _pLen, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_LITTLE, 0, _p);
+    mpz_import(a, _pWords, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_LITTLE, 0, input);
+    mpz_import(p, _pWords, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_LITTLE, 0, _p);
 
     mpz_invert(aInv, a, p);
 
     // Need to zero out the destination
-    memset(inverse, 0, sizeof(unsigned long) * _pLen);
+    memset(inverse, 0, sizeof(unsigned long) * _pWords);
 
     mpz_export(inverse, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_LITTLE, 0, aInv);
 

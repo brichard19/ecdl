@@ -5,13 +5,13 @@
 extern "C" {
 #endif
 
-void x86_sub64(const unsigned long *a, const unsigned long *b, unsigned long *diff);
-void x86_sub96(const unsigned long *a, const unsigned long *b, unsigned long *diff);
-void x86_sub128(const unsigned long *a, const unsigned long *b, unsigned long *diff);
-void x86_sub160(const unsigned long *a, const unsigned long *b, unsigned long *diff);
-void x86_sub192(const unsigned long *a, const unsigned long *b, unsigned long *diff);
-void x86_sub224(const unsigned long *a, const unsigned long *b, unsigned long *diff);
-void x86_sub256(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub64(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub96(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub128(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub160(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub192(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub224(const unsigned long *a, const unsigned long *b, unsigned long *diff);
+int x86_sub256(const unsigned long *a, const unsigned long *b, unsigned long *diff);
 
 
 void x86_add64(const unsigned long *a, const unsigned long *b, unsigned long *sum);

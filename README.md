@@ -2,7 +2,7 @@
 
 This is an implementation of the parallel Pollard's rho algorithm, applied to the elliptic curve discrete logarithm problem.
 
-It solves the ECDLP for curves over a prime field, in weierstrass form.
+It solves the ECDLP for curves over a prime field, in Weierstrass form (Y^2 = X^3 + aX + b)
 
 It consists of a central server program and a client program. The client program can be run on many machines to help solve
 the problem faster. The client requests work from the server and reports any distinguished points it finds.
@@ -164,3 +164,21 @@ kG = 0x5136e72ea9c95aL 0x999eb1108ab4fL
 
 k=0x77fc86a17007L
 ```
+#### Choosing the number of distinguished bits
+
+The number of distinguished bits determines the trade-off between space and running time of the algorithm.
+
+The value to choose depends on the amount of storage available, number of processors, and speed of the processors.
+
+A naive collision search on a curve of order 2^n requires 2^(n/2) storage and (2^(n/2))/m time for m processors.
+
+Using the distinguished point technique, the search requires (2^(n/2))/(2^(n/2-d)) storage and ((2^(n/2))/m + 2.5 * 2^d)t time for d
+distinguished bits and m processors, and t is the time for a single point addition. Note that this is including the time it takes for
+the collison to be detected and solved using the script above.
+
+For example, to solve the discrete logarithm on a curve with an order of ~2^80, it would require about 2^40 points to find a collision.
+
+If using a 24-bit distinguisher, then you will need to find about 2^16 distinguished points. On 128 processors where each processor can do 
+
+1 million point additions per second, the running time would be approximately (2^32 / + 2.5 * 2^24)0.000001 = 1.2 hours.
+

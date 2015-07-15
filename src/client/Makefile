@@ -4,7 +4,7 @@ LIBS+=-L$(LIBDIR)
 
 
 CXX=g++
-CXXFLAGS=-O2
+CXXFLAGS=-O2 -Wall
 NASM=nasm
 COMPUTE_CAP=30
 NVCC=nvcc

@@ -58,5 +58,5 @@ def generate_curve(bits):
         b = randint(1, p)
         curve = EllipticCurve(field,[a,b])
         order = curve.order()
-        if order < p and order in Primes():
+        if order < p and order > low and order in Primes():
             return curve, a, b, order, p

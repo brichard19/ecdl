@@ -1,10 +1,4 @@
-#SRC:=$(wildcard *.cpp)
-#SRC+=$(wildcard *.cu)
-#SRC:=$(filter-out fp131.cu, $(SRC))
-
 CPPSRC:=$(wildcard *.cpp)
-#CUSRC+=$(wildcard *.cu)
-#CUSRC:=$(filter-out fp131.cu, $(CUSRC))
 
 CURL=./curl64
 

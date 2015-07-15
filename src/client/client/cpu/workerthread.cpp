@@ -21,21 +21,9 @@ static unsigned int _rPointMask;
 static unsigned long _mask;
 static unsigned int _pLen;
 
-
-static unsigned long _p[8];
-
 static void (*_callback)(struct CallbackParameters *);
 
-static void printInt(unsigned long *x, int len)
-{
-    for(int i = len - 1; i >= 0; i--) {
-        printf("%.0lx", x[i]);
-    }
-
-    printf("\n");
-}
-
-static inline bool checkMask(unsigned long *x)
+static inline bool checkMask(const unsigned long *x)
 {
     if((x[ 0 ] & _mask) == 0) {
         return true;
@@ -148,8 +136,6 @@ void initThreadGlobals(ECDLPParams *params,
     if(_callback == NULL) {
         printf("Callback is NULL\n");
     }
-
-    _curve.p().getWords(_p, pLen);
 }
 
 void cleanupThreadGlobals()
@@ -179,14 +165,15 @@ void doStep(int threadId)
     BigInteger *b = &_b[threadId * _numPoints];
 
     // Initialize to 1
-    unsigned long product[8] = {0};
+    FpElement product = {0};
+
     product[0] = 1;
 
     for(unsigned int i = 0; i < _numPoints; i++) {
         unsigned int index = i * _pLen;
 
         unsigned int idx = x[ index ] & _rPointMask;
-        unsigned long diff[8];
+        FpElement diff;
 
         subModP(&x[index], &_rx[idx * _pLen], diff);
         copyWords(diff, &diffBuf[ index ], _pLen);
@@ -195,7 +182,7 @@ void doStep(int threadId)
         copyWords(product, &chainBuf[ index ], _pLen);
     }
    
-    unsigned long inverse[8] = {0};
+    FpElement inverse = {0};
     inverseModP(product, inverse);
 
     // Extract inverse of the differences
@@ -205,7 +192,7 @@ void doStep(int threadId)
         // Get the inverse of the last difference by multiplying the inverse
         // of the product of all the differences with the product of all but
         // the last difference
-        unsigned long invDiff[8];
+        FpElement invDiff;
         if(i >= 1) {
             multiplyModP(inverse, &chainBuf[(i - 1) * _pLen], invDiff);
             multiplyModP(inverse, &diffBuf[ index ], inverse);
@@ -214,30 +201,30 @@ void doStep(int threadId)
         }
         unsigned int idx = x[ index ] & _rPointMask;
 
-        unsigned long px[8];
-        unsigned long py[8];
+        FpElement px;
+        FpElement py;
         copyWords(&x[ index ], px, _pLen);
         copyWords(&y[ index ], py, _pLen);
       
         // s = (Py - Qy)/(Px - Qx)
-        unsigned long rise[8];
+        FpElement rise;
         subModP(py, &_ry[ idx * _pLen ], rise);
-        unsigned long s[8];
+        FpElement s;
         multiplyModP(invDiff, rise, s);
-        unsigned long s2[8];
+        FpElement s2;
         squareModP(s, s2);
 
         // Rx = s^2 - Px - Qx
-        unsigned long newX[8];
+        FpElement newX;
         subModP(s2, px, newX);
         subModP(newX, &_rx[ idx * _pLen ], newX);
 
         // Ry = s(Px - Rx) - Py
-        unsigned long k[8];
+        FpElement k;
         subModP(px, newX, k);
      
         multiplyModP(k, s, k);
-        unsigned long newY[8];
+        FpElement newY;
         subModP(k, py, newY);
 
         //Check for distinguished point, call callback function if found

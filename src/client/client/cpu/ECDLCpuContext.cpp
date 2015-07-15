@@ -124,7 +124,6 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
     BenchmarkThreadParams *params = new BenchmarkThreadParams[numThreads];
     Thread *threads = new Thread[numThreads];
 
-    unsigned int t0 = util::getSystemTime();
     for(int i = 0; i < numThreads; i++) {
         params[i].threadId = i;
         params[i].iterations = iterations;
@@ -135,8 +134,6 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
         threads[i].wait();
         printf("Thread %d took %d ms\n", i, params[i].t);
     }
-    unsigned int t1 = util::getSystemTime();
-    float seconds = (float)(t1 - t0)/1000;
 
     unsigned long long iterationsPerSecond = 0;
     unsigned long long pointsPerSecond = 0;
