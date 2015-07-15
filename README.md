@@ -178,7 +178,5 @@ the collison to be detected and solved using the script above.
 
 For example, to solve the discrete logarithm on a curve with an order of ~2^80, it would require about 2^40 points to find a collision.
 
-If using a 24-bit distinguisher, then you will need to find about 2^16 distinguished points. On 128 processors where each processor can do 
-
-1 million point additions per second, the running time would be approximately (2^32 / + 2.5 * 2^24)0.000001 = 1.2 hours.
+If using a 24-bit distinguisher, then you will need to find about 2^16 distinguished points. On 128 processors where each processor can do 1 million point additions per second, the running time would be approximately (2^32 / + 2.5 * 2^24)0.000001 = 1.2 hours.
 
