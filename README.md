@@ -2,14 +2,14 @@
 
 This is an implementation of the parallel Pollard's rho algorithm, applied to the elliptic curve discrete logarithm problem.
 
-It solves the ECDLP for curves over a prime field, in Weierstrass form (Y^2 = X^3 + aX + b)
+It solves the ECDLP for curves over a prime field, in Weierstrass form `Y^2 = X^3 + aX + b`
 
 It consists of a central server program and a client program. The client program can be run on many machines to help solve
-the problem faster. The client requests work from the server and reports any distinguished points it finds.
+the problem faster. The client requests work from the server and sends back any distinguished points it finds.
 The server collects the points and stores them in a database. When two colliding points are found, the problem
 can be solved.
 
-It is still a very new project and probalby has many bugs.
+It is still a very new project and no doubt has many bugs.
 
 #### Dependencies
 
@@ -21,23 +21,33 @@ Client:
 * GNU Multiprecision Arithmetic Library ([https://gmplib.org/](https://gmplib.org/))
 * libcurl ([http://curl.haxx.se/](http://curl.haxx.se/))
 
+CUDA client:
+
+* CUDA Toolkit ([https://developer.nvidia.com/cuda-toolkit](https://developer.nvidia.com/cuda-toolkit))
+
 Server:
-* python 2.7 with flask and MySQLdb
 * mysql database
+* python 2.7 with flask and MySQLdb
 
 Optional:
-* nasm for building with the optimized x86 routines
+* NASM for building with the optimized x86 routines
 * sage ([http://www.sagemath.org](http://www.sagemath.org)) for running script to generate ECDL problems
 
 ### Building the client
 
-To build the CPU client, run `make client_cpu` in the `src/client` directory
+To build the client, run the Makefile in the `src/client` directory.
+
+To build the CPU client:
 
 ```
 # make client_cpu
 ```
 
-There is a GPU client using CUDA, but it is currently broken because it only accepts values in montgomery form. The rest of the code was recently switched to use the Barrett reduction, so they are incompatible.
+To build the CUDA client:
+
+```
+# make client_cuda
+```
 
 
 #### Running the server
@@ -105,12 +115,17 @@ There is a `settings.json` file that needs to be edited
     "server_host": "127.0.0.1",             // Server host
     "server_port": 9999,                    // server port
 
-    "point_cache_size": 128,                 // Points to collect before sending to server
+    "point_cache_size": 128,                // Points to collect before sending to server
     "cpu_threads": 4,                       // Number of threads. 1 thread per core is optimal
-    "cpu_points_per_thread": 1024           // Number of points each thread will compute in parallel
+    "cpu_points_per_thread": 16             // Number of points each thread will compute in parallel
+
+
+    "cuda_blocks": 1,                       // Number of CUDA blocks
+    "cuda_threads": 32,                     // Number of CUDA threads per block
+    "cuda_points_per_thread": 16,           // Number of points each CUDA thread will compute in parallel
+    "cuda_device": 0                        // The index of the CUDA device to use
 }
 ```
-
 
 After a job has been set up on the server, the client can be run. It takes the job name as its argument:
 
@@ -170,13 +185,13 @@ The number of distinguished bits determines the trade-off between space and runn
 
 The value to choose depends on the amount of storage available, number of processors, and speed of the processors.
 
-A naive collision search on a curve of order 2^n requires 2^(n/2) storage and (2^(n/2))/m time for m processors.
+A naive collision search on a curve of order `2^n` requires `2^(n/2)` storage and `(2^(n/2))/m` time for `m` processors.
 
-Using the distinguished point technique, the search requires (2^(n/2))/(2^(n/2-d)) storage and ((2^(n/2))/m + 2.5 * 2^d)t time for d
-distinguished bits and m processors, and t is the time for a single point addition. Note that this is including the time it takes for
+Using the distinguished point technique, the search requires `(2^(n/2))/(2^(n/2-d))` storage and `((2^(n/2))/m + 2.5 * 2^d)t` time for `d`
+distinguished bits and `m` processors, and `t` is the time for a single point addition. Note that this is including the time it takes for
 the collison to be detected and solved using the script above.
 
-For example, to solve the discrete logarithm on a curve with an order of ~2^80, it would require about 2^40 points to find a collision.
+For example, to solve the discrete logarithm on a curve with an order of `~2^80`, it would require about `2^40` points to find a collision.
 
-If using a 24-bit distinguisher, then you will need to find about 2^16 distinguished points. On 128 processors where each processor can do 1 million point additions per second, the running time would be approximately (2^40 / 128 + 2.5 * 2^24)0.000001 = 2.3 hours.
+If using a 24-bit distinguisher, then you will need to find about `2^16` distinguished points. On 128 processors where each processor can do 1 million point additions per second, the running time would be approximately `(2^40 / 128 + 2.5 * 2^24)0.000001` = 2.3 hours.
 
