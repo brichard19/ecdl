@@ -1,24 +1,18 @@
 
 SRC=$(wildcard *.cpp)
-OBJS=$(SRC:.cpp=.o)
-TARGETS=
-ifeq ($(X86_ASM),1)
-OBJS+=x86/x86.o
-INCLUDE+=-I./x86
-CXXFLAGS+=-D_X86
-TARGETS=x86asm
-endif
 
-all:	${TARGETS}
+OBJS=$(SRC:.cpp=.o)
+
+all:	fpmath
 	for file in ${SRC} ; do\
 	    ${CXX} -c $$file ${INCLUDE} -I../ -I./ ${CXXFLAGS};\
 	done
 	ar rvs cpu.a ${OBJS}
 
-x86asm:
-	make --directory x86 all
-	
+fpmath:
+	make --directory math
+
 clean:
-	make --directory x86 clean
+	make --directory math clean
 	rm -rf *.o
 	rm -rf *.a

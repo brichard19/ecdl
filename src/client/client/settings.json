@@ -4,5 +4,11 @@
 
     "point_cache_size": 32,
     "cpu_threads": 1,
-    "cpu_points_per_thread": 1024
+    "cpu_points_per_thread": 16,
+
+
+    "cuda_threads": 32,
+    "cuda_blocks": 1,
+    "cuda_points_per_thread": 16,
+    "cuda_device": 0
 }

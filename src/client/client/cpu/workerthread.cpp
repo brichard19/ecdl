@@ -1,7 +1,7 @@
 #include "BigInteger.h"
 #include "ECDLCPU.h"
 
-#include "Fp.h"
+#include "math/Fp.h"
 #include "util.h"
 
 static ECPoint _g;
@@ -150,9 +150,7 @@ void cleanupThreadGlobals()
 
 void copyWords(unsigned long *src, unsigned long *dest, int len)
 {
-    for(int i = 0; i < len; i++) {
-        dest[i] = src[i];
-    }
+    memcpy(dest, src, sizeof(unsigned long)*len);
 }
 
 void doStep(int threadId)

@@ -2,109 +2,102 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <stdlib.h>
-#include "fp131.cu"
+#include "Fp.cu"
 #include <stdio.h>
 
 #define NUM_R_POINTS 32 // Must be a power of 2
 #define R_POINT_MASK (NUM_R_POINTS - 1)
 
+
+// TODO: Probably don't need these in constant memory as they are only
+// used once at the very beginning.
 /**
  * G, 2G, 4G ... (2^130)G
  */
-__constant__ uint160 _gMultiplesX[ 131 ];
-__constant__ uint160 _gMultiplesY[ 131 ];
+__constant__ unsigned int _gMultiplesX[ 10 * 131 ];
+__constant__ unsigned int _gMultiplesY[ 10 * 131 ];
 
 /**
  * Q, 2Q, 4Q ... (2^130)Q
  */
-__constant__ uint160 _qMultiplesX[ 131 ];
-__constant__ uint160 _qMultiplesY[ 131 ];
+__constant__ unsigned int _qMultiplesX[ 10 * 131 ];
+__constant__ unsigned int _qMultiplesY[ 10 * 131 ];
+
+__constant__ unsigned int _gqMultiplesX[ 10 * 131 ];
+__constant__ unsigned int _gqMultiplesY[ 10 * 131 ];
 
 /**
  * Bit mask for identifying distinguished points
  */
-__constant__ unsigned int _mask[ 2 ];
+__constant__ unsigned int _MASK[ 2 ];
 
 /**
  * The X coordinates of the R points
  */
-__constant__ uint160 _rx[ NUM_R_POINTS ];
+__constant__ unsigned int _rx[ 5 * NUM_R_POINTS ];
 
 /**
  * The Y coordinates of the Y points
  */
-__constant__ uint160 _ry[ NUM_R_POINTS ];
+__constant__ unsigned int _ry[ 5 * NUM_R_POINTS ];
 
 /**
  * Shared memory to hold the R points
  */
-__shared__ unsigned int _shared_rx[ 5 * NUM_R_POINTS ];
-__shared__ unsigned int _shared_ry[ 5 * NUM_R_POINTS ];
+__shared__ unsigned int _shared_rx[ 10 * NUM_R_POINTS ];
+__shared__ unsigned int _shared_ry[ 10 * NUM_R_POINTS ];
 
 
 /**
  * Point at infinity
  */
-__device__ uint160 _pointAtInfinity = { { 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff } };
+__device__ unsigned int _pointAtInfinity[10] = { 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+                                                 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff};
 
-__device__ uint160 getRX(int index)
+template<int N> __device__ void getRX(int index, unsigned int *rx)
 {
-    uint160 x;
-
-    x.v[ 0 ] = _shared_rx[ index ];
-    x.v[ 1 ] = _shared_rx[ 32 + index ];
-    x.v[ 2 ] = _shared_rx[ 64 + index ];
-    x.v[ 3 ] = _shared_rx[ 96 + index ];
-    x.v[ 4 ] = _shared_rx[ 128 + index ];
-
-    return x;
+    for(int i = 0; i < N; i++) {
+        rx[i] = _shared_rx[ 32 * i + index ];
+    }
 }
 
-__device__ uint160 getRY(int index)
+template<int N> __device__ void getRY(int index, unsigned int *ry)
 {
-    uint160 y;
-
-    y.v[ 0 ] = _shared_ry[ index ];
-    y.v[ 1 ] = _shared_ry[ 32 + index ];
-    y.v[ 2 ] = _shared_ry[ 64 + index ];
-    y.v[ 3 ] = _shared_ry[ 96 + index ];
-    y.v[ 4 ] = _shared_ry[ 128 + index ];
-
-    return y;
+    for(int i = 0; i < N; i++) {
+        ry[ i ] = _shared_ry[ 32 * i + index ];
+    }
 }
 
 
 /**
  * Reads constants into shared memory
  */
-__device__ void initSharedMem()
+template<int N> __device__ void initSharedMem()
 {
-    if(threadIdx.x < NUM_R_POINTS) {
-        _shared_rx[ threadIdx.x ] = _rx[ threadIdx.x ].v[ 0 ];
-        _shared_rx[ 32 + threadIdx.x ] = _rx[ threadIdx.x ].v[ 1 ];
-        _shared_rx[ 64 + threadIdx.x ] = _rx[ threadIdx.x ].v[ 2 ];
-        _shared_rx[ 96 + threadIdx.x ] = _rx[ threadIdx.x ].v[ 3 ];
-        _shared_rx[ 128 + threadIdx.x ] = _rx[ threadIdx.x ].v[ 4 ];
-
-        _shared_ry[ threadIdx.x ] = _ry[ threadIdx.x ].v[ 0 ];
-        _shared_ry[ 32 + threadIdx.x ] = _ry[ threadIdx.x ].v[ 1 ];
-        _shared_ry[ 64 + threadIdx.x ] = _ry[ threadIdx.x ].v[ 2 ];
-        _shared_ry[ 96 + threadIdx.x ] = _ry[ threadIdx.x ].v[ 3 ];
-        _shared_ry[ 128 + threadIdx.x ] = _ry[ threadIdx.x ].v[ 4 ];
+    if( threadIdx.x == 0) {
+        for(int i = 0; i < N; i++) {
+            for(int j = 0; j < 32; j++) {
+                _shared_rx[i * 32 + j] = _rx[ N * j + i];
+                _shared_ry[i * 32 + j] = _ry[ N * j + i];
+            }
+        }
     }
-
     __syncthreads();
 }
 
-__device__ void doMultiplication( unsigned int *multiplier,
-                                  uint160 *bpx, uint160 *bpy,
+
+template<int N> __device__ void doMultiplication( const unsigned int *aMultiplier, const unsigned int *bMultiplier,
+                                  const unsigned int *gx, const unsigned int *gy,
+                                  const unsigned int *qx, const unsigned int *qy,
+                                  const unsigned int *gqx, const unsigned int *gqy,
                                   unsigned int *rxAra, unsigned int *ryAra,
                                   unsigned int *diffBuf, unsigned int *chainBuf,
                                   int step, int count )
 {
-    // One, in montgomery form
-    uint160 product = _ONE;
-    uint160 two = { { 2, 0, 0, 0, 0 } };
+    unsigned int product[N] = {0};
+    product[0] = 1;
+    unsigned int two[N] = {0};
+    two[0] = 2;
 
     unsigned int mask = 1 << (step % 32);
     int word = step / 32;
@@ -112,111 +105,211 @@ __device__ void doMultiplication( unsigned int *multiplier,
     // To compute (Px - Qx)^-1, we multiply together all the differences and then perfom
     // a single inversion. After each multiplication we need to store the product.
     for(int i = 0; i < count; i++) {
-        
-        uint160 x = readUint160( rxAra, i );
-        uint160 diff;
-       
+        unsigned int bpx[N];
+        unsigned int x[N];
+        readBigInt<N>(rxAra, i, x);
+        unsigned int diff[N];
+
         // For point at infinity we set the difference as 2 so the math still
         // works out 
-        unsigned int m = readUint160Word( multiplier, i, word );
-        if( (m & mask) == 0 || x.v[ 4 ] == 0xffffffff ) {
-            diff = two;
-        } else {
-            diff = subModP( x, bpx[ step ] );
-        }
-        diff = subModP( x, bpx[ step ] );
+        unsigned int am = readBigIntWord<N>( aMultiplier, i, word );
+        unsigned int bm = readBigIntWord<N>( bMultiplier, i, word );
 
-        writeUint160( diffBuf, i, diff );
-        product = multiplyMontgomery( product, diff );
-        writeUint160( chainBuf, i, product );
+        if( (am | bm) & mask == 0 || step == 0 || equalTo<N>(x, _pointAtInfinity) ) {
+            memcpy(diff, two, sizeof(diff));
+        } else {
+            if( (am & ~bm) & mask ) {
+                copy<N>(&gx[step *N], bpx);
+            } else if( (~am & bm) & mask) {
+                copy<N>(&qx[step *N], bpx);
+            } else {
+                copy<N>(&gqx[step *N], bpx);
+            }
+            subModP<N>(x, bpx, diff);
+        }
+
+        writeBigInt<N>(diffBuf, i, diff);
+
+        multiplyModP<N>(product, diff, product);
+        writeBigInt<N>(chainBuf, i, product);
     }
 
     // Compute the inverse
-    uint160 inverse = inverseModPMontgomery( product );
+    unsigned int inverse[N];
+    inverseModP<N>(product, inverse);
 
     // Multiply by the products stored perviously so that they are canceled out
     for(int i = count - 1; i >= 0; i--) {
 
         // Get the inverse of the last difference by multiplying the inverse of the product of all the differences
         // with the product of all but the last difference
-        uint160 invDiff;
+        unsigned int invDiff[N];
         if( i >= 1 ) {
-            invDiff = multiplyMontgomery( inverse, readUint160( chainBuf, i - 1 ) );
+            unsigned int tmp[N];
+            readBigInt<N>(chainBuf, i - 1, tmp);
+            multiplyModP<N>(inverse, tmp, invDiff);
+
             // Cancel out the last difference
-            inverse = multiplyMontgomery( inverse, readUint160( diffBuf, i ) );
+            readBigInt<N>(diffBuf, i, tmp);
+            multiplyModP<N>(inverse, tmp, inverse);
         } else {
-            invDiff = inverse;
+            copy<N>(inverse, invDiff);
         }
        
-        unsigned int m = readUint160Word( multiplier, i, word );
+        unsigned int am = readBigIntWord<N>( aMultiplier, i, word );
+        unsigned int bm = readBigIntWord<N>( bMultiplier, i, word );
 
-        if( (m & mask) != 0 ) {
-            uint160 px = readUint160( rxAra, i );
-            uint160 py = readUint160( ryAra, i );
-            if( equalTo( px, _pointAtInfinity ) ) {
-                writeUint160( rxAra, i, bpx[ step ] );
-                writeUint160( ryAra, i, bpy[ step ] );
+        if( (am & mask) != 0 || (bm & mask) != 0 ) {
+            unsigned int px[N];
+            unsigned int py[N];
+            unsigned int bpx[N];
+            unsigned int bpy[N];
+          
+            // Select G, Q, or G+Q 
+            if( (am & ~bm) & mask ) {
+                copy<N>(&gx[step *N], bpx);
+                copy<N>(&gy[step *N], bpy);
+            } else if( (~am & bm) & mask) {
+                copy<N>(&qx[step *N], bpx);
+                copy<N>(&qy[step *N], bpy);
             } else {
+                copy<N>(&gqx[step *N], bpx);
+                copy<N>(&gqy[step *N], bpy);
+            }
 
-                uint160 s = multiplyMontgomery( invDiff, subModP( py, bpy[ step ] ) );
-                uint160 s2 = squareMontgomery( s );
+            // Load the current point
+            readBigInt<N>(rxAra, i, px);
+            readBigInt<N>(ryAra, i, py);
+
+            if( equalTo<N>( px, _pointAtInfinity ) ) {
+                writeBigInt<N>(rxAra, i, bpx);
+                writeBigInt<N>(ryAra, i, bpy);
+            } else {
+                unsigned int s[N];
+                unsigned int rx[N];
+                unsigned int s2[N];
+
+                // s = Py - Qy / Px - Py
+                subModP<N>(py, bpy, s);
+                multiplyModP<N>(invDiff, s, s);
+                squareModP<N>(s, s2);
 
                 // Rx = s^2 - Px - Qx
-                uint160 rx = subModP( s2, px );
-                rx = subModP( rx, bpx[ step ] );
+                subModP<N>(s2, px, rx);
+                subModP<N>(rx, bpx, rx);
 
                 // Ry = -Py + s(Px - Rx)
-                uint160 k = subModP( px, rx );
-                k = multiplyMontgomery( k, s );
-                uint160 ry = subModP( k, py );
+                unsigned int k[N];
+                subModP<N>(px, rx, k);
+                multiplyModP<N>(k, s, k);
+                unsigned int ry[N];
 
-                writeUint160( rxAra, i, rx );
-                writeUint160( ryAra, i, ry );
+                subModP<N>(k, py, ry);
+
+                writeBigInt<N>(rxAra, i, rx);
+                writeBigInt<N>(ryAra, i, ry);
+                
             }
         }
     }
+    
 }
 
-__global__ void computeProductGKernel( unsigned int *multiplier,
+__global__ void computeProductGKernel( unsigned int *a, unsigned int *b,
                                        unsigned int *rx, unsigned int *ry,
                                        unsigned int *diffBuf, unsigned int *chainBuf,
                                        int step, int count )
 {
-    initFP131();
-    initSharedMem();
-    doMultiplication( multiplier, _gMultiplesX, _gMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+    switch(_PWORDS) {
+        case 2:
+        initFp();
+        initSharedMem<2>();
+        doMultiplication<2>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        break; 
+        case 3:
+        initFp();
+        initSharedMem<3>();
+        doMultiplication<3>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        break;
+        case 4:
+        initFp();
+        initSharedMem<4>();
+        doMultiplication<4>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        break;
+        case 5:
+        initFp();
+        initSharedMem<5>();
+        doMultiplication<5>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        break;
+        case 6:
+        initFp();
+        initSharedMem<6>();
+        doMultiplication<6>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        break;
+    }
 }
 
-__global__ void computeProductQKernel( unsigned int *multiplier,
-                                       unsigned int *rx, unsigned int *ry,
-                                       unsigned int *diffBuf, unsigned int *chainBuf,
-                                       int step, int count )
+template<int N> __device__ void resetPointsFunc(unsigned int *rx, unsigned int *ry, int count)
 {
-    initFP131();
-    initSharedMem();
-    doMultiplication( multiplier, _qMultiplesX, _qMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
-}
+    // Reset all points to the identity element
+    for(int i = 0; i < count; i++) {
+        switch(_PWORDS) {
+            case 2:
+            writeBigInt<2>( rx, i, _pointAtInfinity );
+            writeBigInt<2>( ry, i, _pointAtInfinity );
+            break;
+            case 3:
+            writeBigInt<3>( rx, i, _pointAtInfinity );
+            writeBigInt<3>( ry, i, _pointAtInfinity );
+            break;
+            case 4:
+            writeBigInt<4>( rx, i, _pointAtInfinity );
+            writeBigInt<4>( ry, i, _pointAtInfinity );
+            break;
+            case 5:
+            writeBigInt<5>( rx, i, _pointAtInfinity );
+            writeBigInt<5>( ry, i, _pointAtInfinity );
+            break;
+            case 6:
+            writeBigInt<6>( rx, i, _pointAtInfinity );
+            writeBigInt<6>( ry, i, _pointAtInfinity );
+            break;
+        }
+    }
 
+}
 
 /**
  * Reset points to point at infinity
  */
 __global__ void resetPointsKernel( unsigned int *rx, unsigned int *ry, int count )
 {
-    // Reset all points to the identity element
-    for(int i = 0; i < count; i++) {
-        writeUint160( rx, i, _pointAtInfinity );
-        writeUint160( ry, i, _pointAtInfinity );
+    switch(_PWORDS) {
+        case 2:
+        resetPointsFunc<2>(rx, ry, count);
+        break;
+        case 3:
+        resetPointsFunc<3>(rx, ry, count);
+        break;
+        case 4:
+        resetPointsFunc<4>(rx, ry, count);
+        break;
+        case 5:
+        resetPointsFunc<5>(rx, ry, count);
+        break;
+        case 6:
+        resetPointsFunc<6>(rx, ry, count);
+        break;
     }
 }
 
 /**
- * Copies G, 2G, 4G ... (2^131)P and Q, 2Q, 4Q ... (2^131)Q to constant memory
+ * Copies G, 2G, 4G ... (2^(n-1)) and Q, 2Q, 4Q ... (2^(n-1))Q to constant memory
  */
-cudaError_t copyMultiplesToDevice( const uint160 *px, const uint160 *py, const uint160 *qx, const uint160 *qy )
+cudaError_t copyMultiplesToDevice(const unsigned int *px, const unsigned int *py, const unsigned int *qx, const unsigned int *qy, const unsigned int *gqx, const unsigned int *gqy, unsigned int len, unsigned int count)
 {
     cudaError_t cudaError = cudaSuccess;
-    size_t size = sizeof(uint160) * 131;
+    unsigned int size = len * count * sizeof(unsigned int);
 
     cudaError = cudaMemcpyToSymbol( _gMultiplesX, px, size, 0, cudaMemcpyHostToDevice );
     if( cudaError != cudaSuccess ) {
@@ -234,6 +327,16 @@ cudaError_t copyMultiplesToDevice( const uint160 *px, const uint160 *py, const u
     }
 
     cudaError = cudaMemcpyToSymbol( _qMultiplesY, qy, size, 0, cudaMemcpyHostToDevice );
+    if( cudaError != cudaSuccess ) {
+        goto end;
+    }
+
+    cudaError = cudaMemcpyToSymbol( _gqMultiplesX, gqx, size, 0, cudaMemcpyHostToDevice);
+    if( cudaError != cudaSuccess ) {
+        goto end;
+    }
+
+    cudaError = cudaMemcpyToSymbol( _gqMultiplesY, gqy, size, 0, cudaMemcpyHostToDevice);
 
 end:
     return cudaError;
@@ -251,38 +354,63 @@ cudaError_t setNumDistinguishedBits(unsigned int dBits)
         mask[ 0 ] >>= (32 - dBits);
         mask[ 1 ] = 0;
     }
-
-    return cudaMemcpyToSymbol(_mask, mask, sizeof(mask), 0, cudaMemcpyHostToDevice);
+    return cudaMemcpyToSymbol(_MASK, mask, sizeof(mask), 0, cudaMemcpyHostToDevice);
 }
 
 /**
  * Set parameters for the prime field library
  */
-cudaError_t setFpParameters(uint160 p, uint160 pInv, uint160 pMinus2, uint160 one, unsigned int rBits)
+cudaError_t setFpParameters(const unsigned int *p, unsigned int pBits, const unsigned int *m, unsigned int mBits, const unsigned int *pMinus2, const unsigned int *pTimes2, const unsigned int *pTimes3)
 {
     cudaError_t cudaError = cudaSuccess;
+    unsigned int pWords = (pBits + 31) / 32;
+    unsigned int mWords = (mBits + 31) / 32;
+    unsigned int p2Words = (pBits + 1 + 31) / 32;
+    unsigned int p3Words = (pBits + 2 + 31) / 32;
 
-    cudaError = cudaMemcpyToSymbol(_P131, &p, sizeof(p), 0, cudaMemcpyHostToDevice);
+    cudaError = cudaMemcpyToSymbol(_P_CONST, p, sizeof(unsigned int)*pWords, 0, cudaMemcpyHostToDevice);
     if(cudaError != cudaSuccess) {
         goto end;
     }
     
-    cudaError = cudaMemcpyToSymbol(_P131MINUS2, &pMinus2, sizeof(pMinus2), 0, cudaMemcpyHostToDevice);
+    cudaError = cudaMemcpyToSymbol(_PMINUS2_CONST, pMinus2, sizeof(unsigned int)*pWords, 0, cudaMemcpyHostToDevice);
     if(cudaError != cudaSuccess) {
         goto end;
     }
     
-    cudaError = cudaMemcpyToSymbol(_ONE, &one, sizeof(one), 0, cudaMemcpyHostToDevice);
+    cudaError = cudaMemcpyToSymbol(_M_CONST, m, sizeof(unsigned int)*mWords, 0, cudaMemcpyHostToDevice);
     if(cudaError != cudaSuccess) {
         goto end;
     }
 
-    cudaError = cudaMemcpyToSymbol(_P131INVERSE, &pInv, sizeof(pInv), 0, cudaMemcpyHostToDevice);
+    cudaError = cudaMemcpyToSymbol(_PBITS_CONST, &pBits, sizeof(pBits), 0, cudaMemcpyHostToDevice);
     if(cudaError != cudaSuccess) {
         goto end;
     }
-    cudaError = cudaMemcpyToSymbol(_RBITS, &rBits, sizeof(rBits), 0, cudaMemcpyHostToDevice);
 
+    cudaError = cudaMemcpyToSymbol(_2P_CONST, pTimes2, sizeof(unsigned int) * p2Words, 0, cudaMemcpyHostToDevice);
+    if(cudaError != cudaSuccess) {
+        goto end;
+    }
+
+    cudaError = cudaMemcpyToSymbol(_3P_CONST, pTimes3, sizeof(unsigned int) * p3Words, 0, cudaMemcpyHostToDevice);
+    if(cudaError != cudaSuccess) {
+        goto end;
+    }
+
+    cudaError = cudaMemcpyToSymbol(_PWORDS, &pWords, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
+    if(cudaError != cudaSuccess) {
+        goto end;
+    }
+
+    cudaError = cudaMemcpyToSymbol(_MWORDS, &mWords, sizeof(unsigned int), 0, cudaMemcpyHostToDevice);
+    if(cudaError != cudaSuccess) {
+        goto end;
+    }
+
+
+    cudaError = cudaMemcpyToSymbol(_MBITS_CONST, &mBits, sizeof(mBits), 0, cudaMemcpyHostToDevice);
+    
 end:
     return cudaError;
 }
@@ -291,9 +419,9 @@ end:
 /**
  * Initialize device parameters
  */
-cudaError_t initDeviceParams(uint160 p, uint160 pInv, uint160 pMinus2, uint160 one, unsigned int rBits, unsigned int dBits)
+cudaError_t initDeviceParams(const unsigned int *p, unsigned int pBits, const unsigned int *m, unsigned int mBits, const unsigned int *pMinus2, const unsigned int *pTimes2, const unsigned int *pTimes3, unsigned int dBits)
 {
-    cudaError_t cudaError = setFpParameters(p, pInv, pMinus2, one, rBits);
+    cudaError_t cudaError = setFpParameters(p, pBits, m, mBits, pMinus2, pTimes2, pTimes3);
     if(cudaError != cudaSuccess) {
         goto end;
     }
@@ -307,10 +435,10 @@ end:
 /**
  * Copy a, b, Rx and Ry to global memory
  */
-cudaError_t copyRPointsToDevice(const uint160 *rx, const uint160 *ry, int count)
+cudaError_t copyRPointsToDevice(const unsigned int *rx, const unsigned int *ry, int length, int count)
 {
     cudaError_t cudaError = cudaSuccess;
-    size_t size = sizeof(uint160) * count;
+    size_t size = sizeof(unsigned int) * length * count;
 
     cudaError = cudaMemcpyToSymbol( _rx, rx, size, 0, cudaMemcpyHostToDevice );
     if( cudaError != cudaSuccess ) {
@@ -327,22 +455,12 @@ end:
 }
 
 cudaError_t multiplyAddG( int blocks, int threads,
-                          unsigned int *multiplier,
+                          unsigned int *a, unsigned int *b,
                           unsigned int *rx, unsigned int *ry,
                           unsigned int *diffBuf, unsigned int *chainBuf,
                           int step, int count )
 {
-    computeProductGKernel<<<blocks, threads>>>( multiplier, rx, ry, diffBuf, chainBuf, step, count );
-    return cudaDeviceSynchronize();
-}
-
-cudaError_t multiplyAddQ( int blocks, int threads,
-                          unsigned int *multiplier,
-                          unsigned int *rx, unsigned int *ry,
-                          unsigned int *diffBuf, unsigned int *chainBuf,
-                          int step, int count )
-{
-    computeProductQKernel<<<blocks, threads>>>( multiplier, rx, ry, diffBuf, chainBuf, step, count );
+    computeProductGKernel<<<blocks, threads>>>( a, b, rx, ry, diffBuf, chainBuf, step, count );
     return cudaDeviceSynchronize();
 }
 
@@ -355,6 +473,116 @@ cudaError_t resetPoints( int blocks, int threads, unsigned int *rx, unsigned int
     return cudaDeviceSynchronize();
 }
 
+template<int N> __device__ void doStep(
+                            unsigned int *xAra,
+                            unsigned int *yAra,
+                            unsigned int *diffBuf,
+                            unsigned int *chainBuf,
+                            unsigned int *pointFound,
+                            unsigned int *pointThreadId,
+                            unsigned int *blockFlags,
+                            unsigned int *flags,
+                            unsigned int count) {
+
+    // Initalize to 1
+    unsigned int product[N] = {0};
+    product[0] = 1;
+
+    // Initialize shared memory constants
+    initFp();
+    initSharedMem<N>();
+
+    // Reset the point found flag
+    if( blockIdx.x == 0 && threadIdx.x == 0 ) {
+        *pointFound = 0;
+    }
+     
+    // Multiply differences together
+    for(int i = 0; i < count; i++) {
+        unsigned int x[N];
+        readBigInt<N>(xAra, i, x);
+        unsigned int idx = x[0] & R_POINT_MASK;
+
+        unsigned int diff[N];
+        unsigned int rx[N];
+        getRX<N>(idx, rx);
+        subModP<N>(x, rx, diff);
+
+        writeBigInt<N>(diffBuf, i, diff);
+
+        multiplyModP<N>(product, diff, product);
+        writeBigInt<N>(chainBuf, i, product);
+    }
+
+    // Compute inverse
+    unsigned int inverse[N];
+    inverseModP<N>(product, inverse);
+
+    // Extract inverse of the differences
+    for(int i = count - 1; i >= 0; i--) {
+
+        // Get the inverse of the last difference by multiplying the inverse of the product of all the differences
+        // with the product of all but the last difference
+        unsigned int invDiff[N];
+
+        if(i >= 1) {
+            unsigned int tmp[N];
+            readBigInt<N>(chainBuf, i - 1, tmp);
+            multiplyModP<N>(inverse, tmp, invDiff);
+
+            // Cancel out the last difference
+            readBigInt<N>(diffBuf, i, tmp);
+            multiplyModP<N>(inverse, tmp, inverse);
+
+        } else {
+            copy<N>(inverse, invDiff);
+        }
+      
+        unsigned int px[N];
+        unsigned int py[N];
+
+        readBigInt<N>(xAra, i, px);
+        readBigInt<N>(yAra, i, py);
+
+        unsigned int idx = px[0] & R_POINT_MASK;
+        unsigned int s[N];
+        unsigned int s2[N];
+
+        // s^2 = (Py - Ry / Qx - Qx)^2
+        unsigned int ry[N];
+        getRY<N>(idx, ry);
+        subModP<N>(py, ry, s);
+        multiplyModP<N>(s, invDiff, s);
+        squareModP<N>(s, s2);
+
+        // Rx = s^2 - Px - Qx
+        unsigned int newX[N];
+        subModP<N>(s2, px, newX);
+
+        unsigned int rx[N];
+        getRX<N>(idx, rx);
+        subModP<N>(newX, rx, newX);
+
+        // Ry = -Py + s(Px - Rx)
+        unsigned int k[N];
+        subModP<N>(px, newX, k);
+        multiplyModP<N>(k, s, k);
+        unsigned int newY[N];
+        subModP<N>(k, py, newY);
+
+        // Write resul to memory
+        writeBigInt<N>(xAra, i, newX);
+        writeBigInt<N>(yAra, i, newY);
+
+        // Check for distinguished point, set flag if found
+        if(((newX[ 0 ] & _MASK[ 0 ]) == 0) && ((newX[ 1 ] & _MASK[ 1 ]) == 0)) {
+            blockFlags[blockIdx.x] = 1;
+            *pointFound = 1;
+            flags[blockDim.x * blockIdx.x * count + threadIdx.x * count + i] = 1;
+        }
+    }
+}
+
 __global__ void doStepKernel( unsigned int *xAra,
                               unsigned int *yAra,
                               unsigned int *diffBuf,
@@ -365,95 +593,24 @@ __global__ void doStepKernel( unsigned int *xAra,
                               unsigned int *flags,
                               unsigned int count )
 {
-    // One, in montgomery form
-    uint160 product = _ONE;
-
-    // Initialize shared memory constants
-    initFP131();
-    initSharedMem();
-
-    // Reset the point found flag
-    if( blockIdx.x == 0 && threadIdx.x == 0 ) {
-        *pointFound = 0;
-    }
-     
-    // Multiply differences together
-    for(int i = 0; i < count; i++) {
-        uint160 x = readUint160(xAra, i);
-
-        unsigned int idx = x.v[ 0 ] & R_POINT_MASK;
-
-        uint160 diff = subModP(x, getRX(idx));
-        writeUint160(diffBuf, i, diff);
-
-        product = multiplyMontgomery(product, diff);
-        writeUint160(chainBuf, i, product);
-    }
-
-    // Compute inverse
-    uint160 inverse = inverseModPMontgomery( product );
-
-    // Extract inverse of the differences
-    for(int i = count - 1; i >= 0; i--) {
-
-        // Get the inverse of the last difference by multiplying the inverse of the product of all the differences
-        // with the product of all but the last difference
-        uint160 invDiff;
-        if(i >= 1) {
-            invDiff = multiplyMontgomery(inverse, readUint160(chainBuf, i - 1));
-            // Cancel out the last difference
-            inverse = multiplyMontgomery(inverse, readUint160(diffBuf, i));
-        } else {
-            invDiff = inverse;
-        }
-        
-        uint160 px = readUint160(xAra, i);
-        uint160 py = readUint160(yAra, i);
-
-        unsigned int idx = px.v[ 0 ] & R_POINT_MASK;
-        uint160 s = multiplyMontgomery(invDiff, subModP(py, getRY(idx)));
-        uint160 s2 = squareMontgomery(s);
-
-        // Rx = s^2 - Px - Qx
-        uint160 newX = subModP(s2, px);
-        newX = subModP(newX, getRX(idx));
-
-        // Ry = -Py + s(Px - Rx)
-        uint160 k = subModP(px, newX);
-        k = multiplyMontgomery(k, s);
-        uint160 newY = subModP(k, py);
-
-        // Write resul tto memory
-        writeUint160(xAra, i, newX);
-        writeUint160(yAra, i, newY);
-
-        //Check for distinguished X coordinate, set flag if found
-        if(((newX.v[ 0 ] & _mask[ 0 ]) == 0) && ((newX.v[ 1 ] & _mask[ 1 ]) == 0)) {
-            blockFlags[blockIdx.x] = 1;
-            *pointFound = 1;
-            flags[blockDim.x * blockIdx.x * count + threadIdx.x * count + i] = 1;
-        }
+    switch(_PWORDS) {
+        case 2:
+        doStep<2>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
+        case 3:
+        doStep<3>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
+        case 4:
+        doStep<4>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
+        case 5:
+        doStep<5>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
+        case 6:
+        doStep<6>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
     }
 }
-
-__global__ void multiplyTestKernel(uint160 *aPtr, uint160 *bPtr, uint160 *rPtr)
-{
-    initFP131();
-    initSharedMem();
-
-    uint160 a = *aPtr;
-    uint160 b = *bPtr;
-
-    uint160 r = multiplyMontgomery(a, b);
-    *rPtr = r;
-}
-
-cudaError_t multiplicationTest(uint160 *aPtr, uint160 *bPtr, uint160 *rPtr)
-{
-    multiplyTestKernel<<<1, 1>>>(aPtr, bPtr, rPtr);
-    return cudaDeviceSynchronize();
-}
-
 
 cudaError_t doStep( int blocks,
                     int threads,

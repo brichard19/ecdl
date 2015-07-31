@@ -2,7 +2,6 @@
 #define _ECDL_CUDA_H
 
 #include "ecc.h"
-#include "uint160.h"
 #include "BigInteger.h"
 #include "ECDLContext.h"
 #include "cudapp.h"
@@ -35,6 +34,7 @@ private:
     unsigned int threads;
     unsigned int threadsPerBlock;
     int rPoints;
+    unsigned int totalPoints;
 
     /**
      * Pointers to host memory
@@ -69,11 +69,11 @@ private:
 
     BigInteger p;
     unsigned int pBits;
-    BigInteger pInv;
-    BigInteger r;
-    BigInteger rInv;
-    BigInteger rModP;
-    BigInteger pMinus2;
+    unsigned int mBits;
+    unsigned int pLen;
+    unsigned int mLen;
+    unsigned int p2Len;
+    BigInteger m;
 
     // The current device
     int device;
@@ -81,26 +81,30 @@ private:
     
     void (*callback)(struct CallbackParameters *);
 
-    uint160 readXFromDevice(unsigned int threadId, unsigned int index);
-    uint160 readYFromDevice(unsigned int threadId, unsigned int index);
-    uint160 readAFromDevice(unsigned int threadId, unsigned int index);
-    uint160 readBFromDevice(unsigned int threadId, unsigned int index);
-    void writeXToDevice(uint160 &value, unsigned int threadId, unsigned int index);
-    void writeYToDevice(uint160 &value, unsigned int threadId, unsigned int index);
-    void writeAToDevice(uint160 &value, unsigned int threadId, unsigned int index);
-    void writeBToDevice(uint160 &value, unsigned int threadId, unsigned int index);
-    void splatUint160(uint160 &x, unsigned int *ara, int thread, int index );
-    uint160 extractUint160( unsigned int *ara, int thread, int index );
+    void readXFromDevice(unsigned int threadId, unsigned int index, unsigned int *x);
+    void readYFromDevice(unsigned int threadId, unsigned int index, unsigned int *y);
+    void readAFromDevice(unsigned int threadId, unsigned int index, unsigned int *a);
+    void readBFromDevice(unsigned int threadId, unsigned int index, unsigned int *b);
+    void writeXToDevice(unsigned int *x, unsigned int threadId, unsigned int index);
+    void writeYToDevice(unsigned int *y, unsigned int threadId, unsigned int index);
+    void writeAToDevice(unsigned int *a, unsigned int threadId, unsigned int index);
+    void writeBToDevice(unsigned int *b, unsigned int threadId, unsigned int index);
+    
+    void splatBigInt(const unsigned int *x, unsigned int *ara, int thread, int index );
+    void splatBigInt(const unsigned int *x, unsigned int *ara, int block, int thread, int index );
+    void extractBigInt(const unsigned int *ara, int thread, int index, unsigned int *x);
+    void extractBigInt(const unsigned int *ara, int block, int thread, int index, unsigned int *x);
+
     void generateMultipliersHost();
-    void writeUint160ToDevice(uint160 &x, unsigned int *dest, unsigned int threadId, unsigned int index);
-    uint160 readUint160FromDevice(unsigned int *src, unsigned int threadId, unsigned int index);
+    void writeBigIntToDevice(const unsigned int *x, unsigned int *dest, unsigned int threadId, unsigned int index );
+    void readBigIntFromDevice(const unsigned int *src, unsigned int threadId, unsigned int index, unsigned int *x);
     void generateStartingPoints();
     void allocateBuffers();
     void freeBuffers();
     void uninitializeDevice();
     bool initializeDevice();
     bool getFlag();
-    void getRandomPoint(uint160 &x, uint160 &y, uint160 &a, uint160 &b);
+    void getRandomPoint(unsigned int *x, unsigned int *y, unsigned int *a, unsigned int *b);
     void setupDeviceConstants();
     bool verifyPoint(BigInteger &x, BigInteger &y);
     void setRunFlag(bool flag);

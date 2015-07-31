@@ -65,6 +65,11 @@ BigInteger::BigInteger(const unsigned long *words, size_t len)
     mpz_import(this->e.get_mpz_t(), len, BYTE_ORDER_LSB, sizeof(unsigned long), ENDIAN_NATIVE, 0, words);
 }
 
+BigInteger::BigInteger(const unsigned int *words, size_t len)
+{
+    mpz_import(this->e.get_mpz_t(), len, BYTE_ORDER_LSB, sizeof(unsigned int), ENDIAN_NATIVE, 0, words);
+}
+
 BigInteger BigInteger::pow(unsigned int exponent)
 {
     BigInteger product;
@@ -241,11 +246,31 @@ size_t BigInteger::getWordLength()
     return (bits + wordSize - 1) / wordSize;
 }
 
+size_t BigInteger::getIntWordLength()
+{
+    size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
+    int wordSize = sizeof(unsigned int)*8;
+
+    return (bits + wordSize - 1) / wordSize;
+}
+
 void BigInteger::getWords(unsigned long *words, size_t size)
 {
     memset( words, 0, size * sizeof(unsigned long) );
     mpz_export( words, NULL, BYTE_ORDER_LSB, sizeof(unsigned long), ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
+
+void BigInteger::getWords(unsigned int *words, size_t size)
+{
+    memset( words, 0, size * sizeof(unsigned int) );
+    mpz_export( words, NULL, BYTE_ORDER_LSB, sizeof(unsigned int), ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
+}
+
+void BigInteger::getWords(unsigned int *words)
+{
+    mpz_export( words, NULL, BYTE_ORDER_LSB, sizeof(unsigned int), ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
+}
+
 
 void BigInteger::getBytes(unsigned char *bytes, size_t size)
 {

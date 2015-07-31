@@ -1,19 +1,21 @@
 #ifndef _ECDL_CUDA_KERNELS_H
 #define _ECDL_CUDA_KERNELS_H
 
-#include "uint160.h"
-
 #include <cuda_runtime.h>
 
 #define NUM_R_POINTS 32 // Must be a power of 2
 #define FIXED_R_MASK (NUM_R_POINTS-1)
 
-cudaError_t copyMultiplesToDevice( const uint160 *px,
-                                   const uint160 *py,
-                                   const uint160 *qx,
-                                   const uint160 *qy );
+cudaError_t copyMultiplesToDevice( const unsigned int *px,
+                                   const unsigned int *py,
+                                   const unsigned int *qx,
+                                   const unsigned int *qy,
+                                   const unsigned int *gqx,
+                                   const unsigned int *gqy,
+                                   unsigned int len,
+                                   unsigned int count );
 
-cudaError_t copyRPointsToDevice(const uint160 *rx, const uint160 *ry, int count);
+cudaError_t copyRPointsToDevice(const unsigned int *rx, const unsigned int *ry, int length, int count);
 
 cudaError_t multiplyAddQ( int blocks,
                           int threads,
@@ -27,7 +29,8 @@ cudaError_t multiplyAddQ( int blocks,
 
 cudaError_t multiplyAddG( int blocks,
                           int threads,
-                          unsigned int *multiplier,
+                          unsigned int *a,
+                          unsigned int *b,
                           unsigned int *rx,
                           unsigned int *ry,
                           unsigned int *diffBuf,
@@ -53,10 +56,5 @@ cudaError_t doStep( int blocks,
                     unsigned int *flags,
                     unsigned int count );
 
-cudaError_t multiplicationTest(uint160 *aPtr, uint160 *bPtr, uint160 *rPtr);
-
-cudaError_t initDeviceParams(uint160 p, uint160 pInv, uint160 p2, uint160 one, unsigned int rBits, unsigned int dBits);
-cudaError_t setNumDistinguishedBits(unsigned int bits);
-cudaError_t setFpParameters(uint160 p, uint160 pInv, uint160 pMinus2, uint160 one, unsigned int rBits);
-
+cudaError_t initDeviceParams(const unsigned int *p, unsigned int pBits, const unsigned int *m, unsigned int mBits, const unsigned int *pMinus2, const unsigned int *pTimes2, const unsigned int *pTimes3, unsigned int dBits);
 #endif

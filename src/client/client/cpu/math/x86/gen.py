@@ -126,7 +126,7 @@ def gen_multiply(bits):
             # store new high word in ebx
             print("    mov ebx, edx")
 
-            # add new low + old high to to s[i + j]
+            # add new low + old high to s[i + j]
             print("    add dword [edi + %d], eax" % ((i+j)*4))
 
             # add the carry to the new high word

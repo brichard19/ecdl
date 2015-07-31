@@ -1,15 +1,15 @@
 CPPSRC:=$(wildcard *.cpp)
 CUSRC+=$(wildcard *.cu)
-CUSRC:=$(filter-out fp131.cu, $(CUSRC))
+CUSRC:=$(filter-out Fp.cu, $(CUSRC))
 
-all:    cuda
+all:	cuda
 
 cuda:
 	for file in ${CPPSRC} ; do\
-		${CXX} -c $$file ${INCLUDE} -I../ -I/usr/local/cuda/include ${CXXFLAGS};\
+		${CXX} -c $$file ${INCLUDE} -I../ -I${CUDA_INCLUDE} ${CXXFLAGS};\
 	done
 	for file in ${CUSRC} ; do\
-		${NVCC} -c ${NVCCFLAGS} ${INCLUDE} -I/usr/local/cuda/include ${CUSRC};\
+		${NVCC} -c ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} ${CUSRC};\
 	done
 	ar rvs cuda.a *.o
 

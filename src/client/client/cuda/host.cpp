@@ -12,7 +12,13 @@
 #include "util.h"
 #include "cudapp.h"
 
-
+void printBigInt(unsigned int *x, int len)
+{
+    for(int i = len - 1; i>= 0; i--) {
+        printf("%.8x", x[i]);
+    }
+    printf("\n");
+}
 /**
  * Checks if the kernel should still be running
  */
@@ -39,51 +45,55 @@ bool ECDLCudaContext::stop()
     return true;
 }
 
-/**
- * Takes a uint160 and 'splats' its contents into coalesced form that the GPU uses
- */
-void ECDLCudaContext::splatUint160(uint160 &x, unsigned int *ara, int thread, int index)
+
+void ECDLCudaContext::splatBigInt(const unsigned int *x, unsigned int *ara, int block, int thread, int index)
 {
-    unsigned int numThreads = threadsPerBlock * blocks;
-    ara[ 5 * numThreads * index + thread ] = x.v[ 0 ];
-    ara[ 5 * numThreads * index + numThreads + thread ] = x.v[ 1 ];
-    ara[ 5 * numThreads * index + numThreads * 2 + thread ] = x.v[ 2 ];
-    ara[ 5 * numThreads * index + numThreads * 3 + thread ] = x.v[ 3 ];
-    ara[ 5 * numThreads * index + numThreads * 4 + thread ] = x.v[ 4 ];
+    splatBigInt(x, ara, threadsPerBlock * block + thread, index);
 }
 
 /**
- * Performs the opposite of splatUint160. Reads an integer from coalesced form
- * into a uint160
+ * Takes an integer array and 'splats' its contents into coalesced form that the GPU uses
  */
-uint160 ECDLCudaContext::extractUint160(unsigned int *ara, int thread, int index)
+void ECDLCudaContext::splatBigInt(const unsigned int *x, unsigned int *ara, int thread, int index)
 {
-    uint160 x;
     unsigned int numThreads = threadsPerBlock * blocks;
 
-    x.v[ 0 ] = ara[ 5 * numThreads * index + thread ];
-    x.v[ 1 ] = ara[ 5 * numThreads * index + numThreads + thread ];
-    x.v[ 2 ] = ara[ 5 * numThreads * index + numThreads * 2 + thread ];
-    x.v[ 3 ] = ara[ 5 * numThreads * index + numThreads * 3 + thread ];
-    x.v[ 4 ] = ara[ 5 * numThreads * index + numThreads * 4 + thread ];
+    for(int i = 0; i < this->pLen; i++) {
+        ara[ this->pLen * numThreads * index + numThreads * i + thread ] = x[i];
+    }
+}
 
-    return x;
+void ECDLCudaContext::extractBigInt(const unsigned int *ara, int block, int thread, int index, unsigned int *x)
+{
+    extractBigInt(ara, threadsPerBlock * block + thread, index, x);
+}
+/**
+ * Performs the opposite of splatBigInt. Reads an integer from coalesced form
+ * into an array.
+ */
+void ECDLCudaContext::extractBigInt(const unsigned int *ara, int thread, int index, unsigned int *x)
+{
+    unsigned int numThreads = threadsPerBlock * blocks;
+
+    for(int i = 0; i < this->pLen; i++) {
+        x[ i ] = ara[ this->pLen * numThreads * index + numThreads * i + thread ];
+    }
 }
 
 void ECDLCudaContext::setRPoints()
 {
-    uint160 rx[ this->rPoints ];
-    uint160 ry[ this->rPoints ];
+    unsigned int rxAra[ this->rPoints * this->pLen ];
+    unsigned int ryAra[ this->rPoints * this->pLen ];
 
-    // Convert to uint160
+    memset(rxAra, 0, sizeof(unsigned int) * this->rPoints * this->pLen);
+    memset(ryAra, 0, sizeof(unsigned int) * this->rPoints * this->pLen);
+
     for(int i = 0; i < this->rPoints; i++) {
-        BigInteger t = util::toMontgomery(this->rx[ i ], this->r, this->p);
-        rx[ i ] = fromBigInteger(t);
-        t = util::toMontgomery(this->ry[ i ], this->r, this->p);
-        ry[ i ] = fromBigInteger(t);
+        this->rx[i].getWords(&rxAra[ i * this->pLen]);
+        this->ry[i].getWords(&ryAra[ i * this->pLen]);
     }
 
-    cudaError_t cudaError = copyRPointsToDevice(rx, ry, this->rPoints);
+    cudaError_t cudaError = copyRPointsToDevice(rxAra, ryAra, this->pLen, this->rPoints);
     if( cudaError != cudaSuccess ) {
         throw cudaError;
     }
@@ -94,42 +104,55 @@ void ECDLCudaContext::setRPoints()
  */
 void ECDLCudaContext::setupDeviceConstants()
 {
-    uint160 gx[ this->pBits ];
-    uint160 gy[ this->pBits ];
-    uint160 qx[ this->pBits ];
-    uint160 qy[ this->pBits ];
+    unsigned int gx[ this->pBits * this->pLen ];
+    unsigned int gy[ this->pBits * this->pLen ];
+    unsigned int qx[ this->pBits * this->pLen ];
+    unsigned int qy[ this->pBits * this->pLen ];
+    unsigned int gqx[ this->pBits * this->pLen ];
+    unsigned int gqy[ this->pBits * this->pLen ];
+
+    memset(gx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(gy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(qx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(qy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(gqx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(gqy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
 
     ECPoint g(params.gx, params.gy);
     ECPoint q(params.qx, params.qy);
+    ECPoint sum = this->curve.addPoint(g, q);
 
     if(!this->curve.pointExists(g)) {
         printf("G is not on the curve!\n");
     }
+
     if(!this->curve.pointExists(q)) {
         printf("Q is not on the curve!\n");
     }
 
-    BigInteger gxMontgomery;
-    BigInteger gyMontgomery;
-    BigInteger qxMontgomery;
-    BigInteger qyMontgomery;
+    // Convert Gx, Gy
+    BigInteger x = g.getX();
+    BigInteger y = g.getY();
+    x.getWords(gx);
+    y.getWords(gy);
 
-    // Point G in montgomery form
-    gxMontgomery = util::toMontgomery(g.getX(), this->r, this->p);
-    gx[ 0 ] = fromBigInteger(gxMontgomery);
-    gyMontgomery = util::toMontgomery(g.getY(), this->r, this->p);
-    gy[ 0 ] = fromBigInteger(gyMontgomery);
+    // Convert Qx, Qy
+    x = q.getX();
+    y = q.getY();
+    x.getWords(qx);
+    y.getWords(qy); 
 
-    // Point Q in montgomery form
-    qxMontgomery = util::toMontgomery(q.getX(), this->r, this->p);
-    qx[ 0 ] = fromBigInteger( qxMontgomery );
-    qyMontgomery = util::toMontgomery(q.getY(), this->r, this->p);
-    qy[ 0 ] = fromBigInteger( qyMontgomery );
+    // Convert G+Q
+    x = sum.getX();
+    y = sum.getY();
+    x.getWords(gqx);
+    y.getWords(gqy);
 
     // Generate 2G, 4G .. (2^130)G and 2Q, 4Q ... (2^130)Q
     for(unsigned int i = 1; i < this->pBits; i++) {
         g = this->curve.doublePoint(g);
         q = this->curve.doublePoint(q);
+        sum = this->curve.addPoint(g, q);
 
         if(!this->curve.pointExists(g)) {
             printf("G is not on the curve!\n");
@@ -137,34 +160,54 @@ void ECDLCudaContext::setupDeviceConstants()
         if(!this->curve.pointExists(q)) {
             printf("Q is not on the curve!\n");
         }
-      
-        BigInteger m = util::toMontgomery(g.getX(), this->r, this->p);
-        gx[ i ] = fromBigInteger(m);
-        
-        m = util::toMontgomery(g.getY(), this->r, this->p);
-        gy[ i ] = fromBigInteger(m);
+    
+        if(!this->curve.pointExists(sum)) {
+            printf("G + Q is not on the curve!\n");
+        }
 
-        m = util::toMontgomery(q.getX(), this->r, this->p);
-        qx[ i ] = fromBigInteger(m);
-        
-        m = util::toMontgomery(q.getY(), this->r, this->p);
-        qy[ i ] = fromBigInteger(m);
+        x = g.getX(); 
+        y = g.getY(); 
+        x.getWords(&gx[i * pLen]);
+        y.getWords(&gy[i * pLen]);
+      
+        x = q.getX();
+        y = q.getY();
+        x.getWords(&qx[i * pLen]);
+        y.getWords(&qy[i * pLen]);
+
+        x = sum.getX();
+        y = sum.getY();
+        x.getWords(&gqx[i * pLen]);
+        y.getWords(&gqy[i * pLen]);
     }
 
     // Copy points to device
     cudaError_t cudaError = cudaSuccess;
 
-    cudaError = copyMultiplesToDevice(gx, gy, qx, qy);
+    cudaError = copyMultiplesToDevice(gx, gy, qx, qy, gqx, gqy, this->pLen, this->pBits);
     if(cudaError != cudaSuccess) {
         throw cudaError;
     }
 
-    cudaError = initDeviceParams(fromBigInteger(this->p),
-                                 fromBigInteger(this->pInv),
-                                 fromBigInteger(this->pMinus2),
-                                 fromBigInteger(this->rModP),
-                                 this->r.getBitLength(),
-                                 params.dBits);
+    unsigned int pAra[this->pLen];
+    this->p.getWords(pAra);
+
+    unsigned int mAra[this->mLen];
+    this->m.getWords(mAra);
+
+    BigInteger pMinus2 = p - 2;
+    unsigned int pMinus2Ara[this->pLen];
+    pMinus2.getWords(pMinus2Ara);
+
+    BigInteger pTimes2 = this->p * 2;
+    unsigned int pTimes2Ara[pTimes2.getWordLength()];
+    pTimes2.getWords(pTimes2Ara);
+
+    BigInteger pTimes3 = this->p * 3;
+    unsigned int pTimes3Ara[pTimes3.getWordLength()];
+    pTimes3.getWords(pTimes3Ara);
+
+    cudaError = initDeviceParams(pAra, this->pBits, mAra, this->mBits, pMinus2Ara, pTimes2Ara, pTimes3Ara, params.dBits);
     
     if(cudaError != cudaSuccess) {
         throw cudaError;
@@ -174,32 +217,39 @@ void ECDLCudaContext::setupDeviceConstants()
 /**
  * Generates a random point n the form aG + bQ. 
  */
-void ECDLCudaContext::getRandomPoint(uint160 &x, uint160 &y, uint160 &a, uint160 &b)
+void ECDLCudaContext::getRandomPoint(unsigned int *x, unsigned int *y, unsigned int *a, unsigned int *b)
 {
-    // points G and Q
-    ECPoint g(params.gx, params.gy);
-    ECPoint q(params.qx, params.qy);
+    unsigned int mask = (0x01 << this->params.dBits) - 1;
+    do {
+        memset(x, 0, sizeof(unsigned int) * this->pLen);
+        memset(y, 0, sizeof(unsigned int) * this->pLen);
+        memset(a, 0, sizeof(unsigned int) * this->pLen);
+        memset(b, 0, sizeof(unsigned int) * this->pLen);
 
-    // Random a and b
-    BigInteger m1 = randomBigInteger(params.n);
-    BigInteger m2 = randomBigInteger(params.n);
+        // points G and Q
+        ECPoint g(params.gx, params.gy);
+        ECPoint q(params.qx, params.qy);
 
-    // aG, bQ
-    ECPoint aG = this->curve.multiplyPoint(m1, g);
-    ECPoint bQ = this->curve.multiplyPoint(m2, q);
+        // Random a and b
+        BigInteger m1 = randomBigInteger(params.n);
+        BigInteger m2 = randomBigInteger(params.n);
 
-    // aG + bQ
-    ECPoint sum = this->curve.addPoint(aG, bQ);
+        // aG, bQ
+        ECPoint aG = this->curve.multiplyPoint(m1, g);
+        ECPoint bQ = this->curve.multiplyPoint(m2, q);
 
-    // Convert X and Y to montgomery form
-    BigInteger xMontgomery = util::toMontgomery(sum.getX(), this->r, this->p);
-    BigInteger yMontgomery = util::toMontgomery(sum.getY(), this->r, this->p);
+        // aG + bQ
+        ECPoint sum = this->curve.addPoint(aG, bQ);
 
-    // Convert to uint160 type
-    x = fromBigInteger(xMontgomery);
-    y = fromBigInteger(yMontgomery);
-    a = fromBigInteger(m1);
-    b = fromBigInteger(m2);
+        // Convert to uint160 type
+        BigInteger sumX = sum.getX();
+        BigInteger sumY = sum.getY();
+
+        sumX.getWords(x);
+        sumY.getWords(y);
+        m1.getWords(a);
+        m2.getWords(b);
+    }while(x[0] & mask == 0);
 }
 
 /**
@@ -207,15 +257,21 @@ void ECDLCudaContext::getRandomPoint(uint160 &x, uint160 &y, uint160 &a, uint160
  */
 void ECDLCudaContext::generateMultipliersHost()
 {
-    for(unsigned int index = 0; index < pointsPerThread; index++) {
-        for(unsigned int thread = 0; thread < blocks * threadsPerBlock; thread++) {
+    for(unsigned int index = 0; index < this->pointsPerThread; index++) {
+        for(unsigned int thread = 0; thread < this->blocks * this->threadsPerBlock; thread++) {
             // TODO: Use better RNG here
             BigInteger m1 = randomBigInteger(params.n);
             BigInteger m2 = randomBigInteger(params.n);
-            uint160 a = fromBigInteger(m1);
-            uint160 b = fromBigInteger(m2);
-            splatUint160(a, AStart, thread, index);
-            splatUint160(b, BStart, thread, index);
+            unsigned int a[this->pLen];
+            unsigned int b[this->pLen];
+
+            memset(a, 0, this->pLen * sizeof(unsigned int));
+            memset(b, 0, this->pLen * sizeof(unsigned int));
+
+            m1.getWords(a);
+            m2.getWords(b);
+            splatBigInt(a, AStart, thread, index);
+            splatBigInt(b, BStart, thread, index);
         }
     }
 }
@@ -230,30 +286,10 @@ void ECDLCudaContext::generateStartingPoints()
     // Reset points to point at infinity
     resetPoints(this->blocks, this->threadsPerBlock, this->devX, this->devY, this->pointsPerThread);
 
-    Logger::logInfo("Multiplying points P");
+    Logger::logInfo("Multiplying points");
     for(unsigned int i = 0; i < this->pBits; i++) {
         cudaError = multiplyAddG( this->blocks, this->threadsPerBlock,
-                                  this->devAStart,
-                                  this->devX, this->devY,
-                                  this->devDiffBuf, this->devChainBuf,
-                                  i, this->pointsPerThread );
-        if( cudaError != cudaSuccess ) {
-            throw cudaError;
-        }
-    }
- 
-
-    uint160 xMontgomery = readUint160FromDevice(this->devX, 0, 0);
-    uint160 yMontgomery = readUint160FromDevice(this->devY, 0, 0);
-
-    BigInteger x = util::fromMontgomery(toBigInteger(xMontgomery), this->rInv, this->p); 
-    BigInteger y = util::fromMontgomery(toBigInteger(yMontgomery), this->rInv, this->p);
-
-    // Compute P = P + bQ. Each kernel call performs 1 point addition
-    Logger::logInfo( "Multiplying points Q" );
-    for(unsigned int i = 0; i < this->pBits; i++) {
-        cudaError = multiplyAddQ( this->blocks, this->threadsPerBlock,
-                                  this->devBStart,
+                                  this->devAStart, this->devBStart,
                                   this->devX, this->devY,
                                   this->devDiffBuf, this->devChainBuf,
                                   i, this->pointsPerThread );
@@ -263,50 +299,43 @@ void ECDLCudaContext::generateStartingPoints()
     }
 }
 
-void ECDLCudaContext::writeUint160ToDevice( uint160 &x, unsigned int *dest, unsigned int threadId, unsigned int index )
+void ECDLCudaContext::writeBigIntToDevice( const unsigned int *x, unsigned int *dest, unsigned int threadId, unsigned int index )
 {
     unsigned int numThreads = this->blocks * this->threadsPerBlock;
 
-    CUDA::memcpy(&dest[ 5 * numThreads * index + threadId ], &x.v[ 0 ], 4, cudaMemcpyHostToDevice);
-    CUDA::memcpy(&dest[ 5 * numThreads * index + numThreads + threadId ], &x.v[ 1 ], 4, cudaMemcpyHostToDevice);
-    CUDA::memcpy(&dest[ 5 * numThreads * index + numThreads * 2 + threadId ], &x.v[ 2 ], 4, cudaMemcpyHostToDevice);
-    CUDA::memcpy(&dest[ 5 * numThreads * index + numThreads * 3 + threadId ], &x.v[ 3 ], 4, cudaMemcpyHostToDevice);
-    CUDA::memcpy(&dest[ 5 * numThreads * index + numThreads * 4 + threadId ], &x.v[ 4 ], 4, cudaMemcpyHostToDevice);
+    for(int i = 0; i < this->pLen; i++) {
+        CUDA::memcpy(&dest[ this->pLen * numThreads * index + numThreads * i + threadId ], &x[ i ], 4, cudaMemcpyHostToDevice);
+    }
 }
 
 
-uint160 ECDLCudaContext::readUint160FromDevice( unsigned int *src, unsigned int threadId, unsigned int index )
+void ECDLCudaContext::readBigIntFromDevice( const unsigned int *src, unsigned int threadId, unsigned int index, unsigned int *x)
 {
-    uint160 x;
     unsigned int numThreads = this->threads;
 
-    CUDA::memcpy(&x.v[ 0 ], &src[ 5 * numThreads * index + threadId ], 4, cudaMemcpyDeviceToHost);
-    CUDA::memcpy(&x.v[ 1 ], &src[ 5 * numThreads * index + numThreads + threadId ], 4, cudaMemcpyDeviceToHost);
-    CUDA::memcpy(&x.v[ 2 ], &src[ 5 * numThreads * index + numThreads * 2 + threadId ], 4, cudaMemcpyDeviceToHost);
-    CUDA::memcpy(&x.v[ 3 ], &src[ 5 * numThreads * index + numThreads * 3 + threadId ], 4, cudaMemcpyDeviceToHost);
-    CUDA::memcpy(&x.v[ 4 ], &src[ 5 * numThreads * index + numThreads * 4 + threadId ], 4, cudaMemcpyDeviceToHost);
-
-    return x;
+    for(int i = 0; i < this->pLen; i++) {
+        CUDA::memcpy(&x[ i ], &src[ this->pLen * numThreads * index + numThreads * i + threadId ], 4, cudaMemcpyDeviceToHost);
+    }
 }
 
-uint160 ECDLCudaContext::readXFromDevice(unsigned int threadId, unsigned int index)
+void ECDLCudaContext::readXFromDevice(unsigned int threadId, unsigned int index, unsigned int *x)
 {
-    return readUint160FromDevice(this->devX, threadId, index);
+    readBigIntFromDevice(this->devX, threadId, index, x);
 }
 
-uint160 ECDLCudaContext::readYFromDevice(unsigned int threadId, unsigned int index)
+void ECDLCudaContext::readYFromDevice(unsigned int threadId, unsigned int index, unsigned int *y)
 {
-    return readUint160FromDevice(this->devY, threadId, index);
+    readBigIntFromDevice(this->devY, threadId, index, y);
 }
 
-void ECDLCudaContext::writeXToDevice(uint160 &value, unsigned int threadId, unsigned int index)
+void ECDLCudaContext::writeXToDevice(unsigned int *x, unsigned int threadId, unsigned int index)
 {
-    writeUint160ToDevice(value, this->devX, threadId, index);
+    writeBigIntToDevice(x, this->devX, threadId, index);
 }
 
-void ECDLCudaContext::writeYToDevice(uint160 &value, unsigned int threadId, unsigned int index)
+void ECDLCudaContext::writeYToDevice(unsigned int *y, unsigned int threadId, unsigned int index)
 {
-    writeUint160ToDevice(value, this->devY, threadId, index);
+    writeBigIntToDevice(y, this->devY, threadId, index);
 }
 
 /**
@@ -315,49 +344,49 @@ void ECDLCudaContext::writeYToDevice(uint160 &value, unsigned int threadId, unsi
  */
 void ECDLCudaContext::allocateBuffers()
 {
-    size_t numValues = this->blocks * this->threadsPerBlock * this->pointsPerThread;
-    size_t totalSize = sizeof(uint160) * numValues;
+    size_t numPoints = this->blocks * this->threadsPerBlock * this->pointsPerThread;
+    size_t arraySize = sizeof(unsigned int) * this->pLen * numPoints;
 
-    Logger::logInfo("Allocating %ld bytes on device", totalSize * 4 );
-    Logger::logInfo("Allocating %ld bytes on host", totalSize * 2 );
+    Logger::logInfo("Allocating %ld bytes on device", arraySize * 4 );
+    Logger::logInfo("Allocating %ld bytes on host", arraySize * 2 );
     Logger::logInfo("%d blocks", this->blocks );
     Logger::logInfo("%d threads (%d threads per block)", this->threads, this->threadsPerBlock);
     Logger::logInfo("%d points in parallel (%d points per thread)",
             this->threads * this->pointsPerThread, this->pointsPerThread);
 
     // Allocate 'a' values in host memory
-    this->AStart = (unsigned int *)CUDA::hostAlloc(totalSize, cudaHostAllocMapped);
-    memset( this->AStart, 0, totalSize );
+    this->AStart = (unsigned int *)CUDA::hostAlloc(arraySize, cudaHostAllocMapped);
+    memset( this->AStart, 0, arraySize );
 
     // Map host memory to device address space
     this->devAStart = (unsigned int *)CUDA::getDevicePointer(this->AStart, 0);
 
     // Allocate 'b' values in host memory
-    this->BStart = (unsigned int *)CUDA::hostAlloc(totalSize, cudaHostAllocMapped );
-    memset( this->BStart, 0, totalSize );
+    this->BStart = (unsigned int *)CUDA::hostAlloc(arraySize, cudaHostAllocMapped );
+    memset( this->BStart, 0, arraySize );
+
+    // Map host memory to device address space
+    this->devBStart = (unsigned int *)CUDA::getDevicePointer(this->BStart, 0);
 
     // Each thread gets a flag to notify that it has found a distinguished point
-    this->pointFoundFlags = (unsigned int *)CUDA::hostAlloc(numValues * sizeof(unsigned int), cudaHostAllocMapped);
-    memset(this->pointFoundFlags, 0, numValues * sizeof(unsigned int));
+    this->pointFoundFlags = (unsigned int *)CUDA::hostAlloc(numPoints * sizeof(unsigned int), cudaHostAllocMapped);
+    memset(this->pointFoundFlags, 0, numPoints * sizeof(unsigned int));
 
     // Each block gets a flag to notify if any threads in that block found a distinguished point
     this->blockFlags = (unsigned int *)CUDA::hostAlloc(this->blocks * sizeof(unsigned int), cudaHostAllocMapped);
     memset(this->blockFlags, 0, this->blocks * sizeof(unsigned int));
 
-    // Map host memory to device address space
-    this->devBStart = (unsigned int *)CUDA::getDevicePointer(this->BStart, 0);
-    
     // Allocate 'x' values in device memory
-    this->devX = (unsigned int *)CUDA::malloc(totalSize);
+    this->devX = (unsigned int *)CUDA::malloc(arraySize);
 
     // Allocate 'y' values in device memory
-    this->devY = (unsigned int*)CUDA::malloc(totalSize);
+    this->devY = (unsigned int*)CUDA::malloc(arraySize);
 
     // Allocate buffer to hold difference when computing point addition
-    this->devDiffBuf = (unsigned int *)CUDA::malloc(totalSize);
+    this->devDiffBuf = (unsigned int *)CUDA::malloc(arraySize);
 
     // Allocate buffer to hold the multiplication chain when computing batch inverse
-    this->devChainBuf = (unsigned int *)CUDA::malloc(totalSize);
+    this->devChainBuf = (unsigned int *)CUDA::malloc(arraySize);
 
     // Allocate integer to be used as a flag if a distinguished point is found
     this->devPointFoundFlag = (unsigned int *)CUDA::malloc(4);
@@ -387,8 +416,8 @@ bool ECDLCudaContext::verifyPoint(BigInteger &x, BigInteger &y)
     ECPoint p = ECPoint(x, y);
 
     if(!this->curve.pointExists(p)) {
-        Logger::logError("x: %s\n", x.toString().c_str());
-        Logger::logError("y: %s\n", y.toString().c_str());
+        Logger::logError("x: %s\n", x.toString(16).c_str());
+        Logger::logError("y: %s\n", y.toString(16).c_str());
         Logger::logError("Point is not on the curve\n");
         return false;
     }
@@ -407,6 +436,7 @@ bool ECDLCudaContext::initializeDevice()
     
     try {
         allocateBuffers();
+
         setupDeviceConstants();
         setRPoints();
     }catch(cudaError_t err) {
@@ -441,37 +471,29 @@ ECDLCudaContext::ECDLCudaContext( int device, unsigned int blocks,
     this->threadsPerBlock = threads;
     this->pointsPerThread = points;
     this->threads = this->blocks * this->threadsPerBlock;
+    this->totalPoints = blocks * threads * points;
     this->device = device;
     this->callback = callback;
     this->runFlag = true;
     this->params = *params;
     this->rPoints = rPoints; 
     this->p = params->p;
- 
-    // Compute R and R inverse. R is the smallest power of
-    // 2 that is greater than P
+
     this->pBits = this->p.getBitLength();
-    this->r = BigInteger(2).pow(this->pBits);
-    this->rInv = this->r.invm(this->p);
+    this->pLen = (this->pBits + 31) / 32;
 
-    // -(P^-1) mod R
-    this->pInv = this->p.invm(this->r);
-    this->pInv = (this->r - this->pInv) % this->r;
-
-    // P minus 2 (used for computing inverse mod P)
-    this->pMinus2 = this->p - BigInteger(2); 
-
-    // 1 in montgomery form
-    this->rModP = this->r % this->p;
+    // m is 4^k / p where k is the number of bits in p
+    this->m = BigInteger(4).pow(this->pBits);
+    this->m = this->m / this->p;
+    this->mBits = this->m.getBitLength();
+    this->mLen = (this->mBits + 31) / 32;
 
     Logger::logInfo("P bits: %d", this->pBits);
+    Logger::logInfo("P words: %d", this->pLen);
     Logger::logInfo("P:      %s", this->p.toString().c_str());
-    Logger::logInfo("R:      %s", this->r.toString().c_str());
-    Logger::logInfo("R bits: %d", this->r.getBitLength());
-    Logger::logInfo("Pinv:   %s", this->pInv.toString().c_str());
-    Logger::logInfo("Rinv:   %s", this->rInv.toString().c_str());
-    Logger::logInfo("P-2:    %s", this->pMinus2.toString().c_str());
-    Logger::logInfo("RmodP:  %s", this->rModP.toString().c_str());
+    Logger::logInfo("M:    %s", this->m.toString().c_str());
+    Logger::logInfo("M bits: %d", this->mBits);
+    Logger::logInfo("M words: %d", this->mLen);
 
     // Copy random walk points
     Logger::logInfo("R points:");
@@ -533,6 +555,7 @@ bool ECDLCudaContext::run()
 
     Logger::logInfo("Running");
     setRunFlag(true);
+
     do {
         cudaError_t cudaError = cudaSuccess;
         cudaError = doStep(this->blocks,
@@ -551,7 +574,7 @@ bool ECDLCudaContext::run()
             Logger::logError("CUDA error: %s\n", cudaGetErrorString(cudaError));
             break;
         }
-        
+
         if(getFlag()) {
 
             for(unsigned int block = 0; block < this->blocks; block++) {
@@ -571,47 +594,61 @@ bool ECDLCudaContext::run()
 
                         threadId = block * this->threadsPerBlock + thread;
 
-                        uint160 x = readXFromDevice(threadId, pointIndex);
-                        uint160 y = readYFromDevice(threadId, pointIndex);
-                        uint160 Astart = extractUint160(this->AStart, threadId, pointIndex);
-                        uint160 Bstart = extractUint160(this->BStart, threadId, pointIndex);
+                        unsigned int x[this->pLen];
+                        unsigned int y[this->pLen];
+                        unsigned int Astart[this->pLen];
+                        unsigned int Bstart[this->pLen];
 
-                        BigInteger xm = toBigInteger(x);
-                        BigInteger ym = toBigInteger(y);
-                        BigInteger xBig = util::fromMontgomery(xm, this->rInv, this->p);
-                        BigInteger yBig = util::fromMontgomery(ym, this->rInv, this->p);
-                        BigInteger aStartBig = toBigInteger(Astart);
-                        BigInteger bStartBig = toBigInteger(Bstart);
+                        memset(x, 0, sizeof(x));
+                        memset(y, 0, sizeof(x));
+                        memset(Astart, 0, sizeof(x));
+                        memset(Bstart, 0, sizeof(x));
 
-                        printf("Found point\n");
-                        printf("%lld iterations\n", iterations);
+                        readXFromDevice(threadId, pointIndex, x);
+                        readYFromDevice(threadId, pointIndex, y);
+                        extractBigInt(this->AStart, block, thread, pointIndex, Astart);
+                        extractBigInt(this->BStart, block, thread, pointIndex, Bstart);
+
+                        BigInteger xBig(x, this->pLen);
+                        BigInteger yBig(y, this->pLen);
+                        BigInteger aStartBig(Astart, this->pLen);
+                        BigInteger bStartBig(BStart, this->pLen);
+
                         if(!verifyPoint(xBig, yBig)) {
-                            Logger::logError("%s %s\n", aStartBig.toString().c_str(), bStartBig.toString().c_str());
-                            Logger::logError("[%s, %s]\n", xm.toString().c_str(), ym.toString().c_str());
-                            Logger::logError("[%s, %s]\n", xBig.toString().c_str(), yBig.toString().c_str());
                             Logger::logError( "==== INVALID POINT ====\n" );
+                            printf("Index: %d\n", pointIndex);
+                            printf("Thread: %d\n", thread);
+                            printf("Block: %d\n", block);
+                            Logger::logError("%s %s\n", aStartBig.toString(16).c_str(), bStartBig.toString(16).c_str());
+                            Logger::logError("[%s, %s]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
+                            printf("a: ");
+                            printBigInt(AStart, this->pLen);
+                            printf("b: ");
+                            printBigInt(BStart, this->pLen);
+                            printf("x: ");
+                            printBigInt(x, this->pLen);
+                            printf("y: ");
+                            printBigInt(y, this->pLen);
                             return false;
                         }
                         
                         struct CallbackParameters p;
                         p.aStart = aStartBig;
                         p.bStart = bStartBig;
-                        p.x = xm;
-                        p.y = ym;
+                        p.x = xBig;
+                        p.y = yBig;
 
                         callback(&p);
                         
-                        // Generate new point
-                        uint160 newX;
-                        uint160 newY;
-                        uint160 newA;
-                        uint160 newB;
-                        
+                        unsigned int newX[this->pLen];
+                        unsigned int newY[this->pLen];
+                        unsigned int newA[this->pLen];
+                        unsigned int newB[this->pLen]; 
                         getRandomPoint( newX, newY, newA, newB );
                         
                         // Write a, b to host memory
-                        splatUint160( newA, this->AStart, threadId, pointIndex );
-                        splatUint160( newB, this->BStart, threadId, pointIndex );
+                        splatBigInt( newA, this->AStart, threadId, pointIndex );
+                        splatBigInt( newB, this->BStart, threadId, pointIndex );
 
                         // Write x, y to device memory
                         writeXToDevice( newX, threadId, pointIndex );

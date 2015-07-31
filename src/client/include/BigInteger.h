@@ -28,6 +28,7 @@ public:
     BigInteger( std::string s, int base = 0);
     BigInteger( const unsigned char *bytes, size_t len );
     BigInteger( const unsigned long *words, size_t len );
+    BigInteger( const unsigned int *words, size_t len);
 
     std::string toString(int base = 10);
 
@@ -44,7 +45,10 @@ public:
     size_t getBitLength();
     size_t getByteLength();
     size_t getWordLength();
+    size_t getIntWordLength();
     void getWords( unsigned long *words, size_t size );
+    void getWords( unsigned int *words, size_t size );
+    void getWords(unsigned int *words);
     void getBytes( unsigned char *bytes, size_t size );
     bool equals( BigInteger &i );
 

@@ -35,7 +35,7 @@ def generate_ecdlp(bits, filename):
     data['params']['gy'] = str(gy)
     data['params']['qx'] = str(qx)
     data['params']['qy'] = str(qy)
-    data['params']['bits'] = 20
+    data['params']['bits'] = 24
 
     dataStr = str(data).replace("\'", "\"")
     f = file(filename, 'w')

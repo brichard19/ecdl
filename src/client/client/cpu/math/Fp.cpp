@@ -18,6 +18,9 @@ static FpElement _p = {0};
 // 2 x prime modulus (used in Barrett reduction)
 static FpElement _p2 = {0};
 
+// 3 x prime modulus
+static FpElement _p3 = {0};
+
 // Modulus length in bits
 static int _pBits;
 
@@ -26,6 +29,8 @@ static int _pWords;
 
 // Length of m in words
 static int _mWords;
+
+static int _mBits;
 
 static int gmp_sub(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
@@ -136,12 +141,14 @@ static void reduceModP(const unsigned long *x, unsigned long *c)
     sub2(x, qp, r);
 
     // The trick here is that instead of multiplying xm by p, we multiplied only the top
-    // half by p. This still works because the lower bits of the product are discarded anyway.
+    // half of xm by p. This still works because the lower bits of the product are discarded anyway.
     // But it could have been the case that there was a carry from the multiplication operation on
     // the lower bits, which will result in r being >= 2p because in that case we would be
-    // doing x - (q-1) *p instead of x - q*p. So we need to check for >= 2p and >= p. Its more checks
+    // doing x-(q-1)*p or x-(q-2)*p instead of x-q*p. So we need to check for  r >= 3p, r >= 2p and >= p. Its more checks
     // but saves us from doing a multiplication.
-    if(greaterThanEqualTo(r, _p2, _pWords+1)) {
+    if(greaterThanEqualTo(r, _p3, _pWords+1)) {
+        sub2(r, _p3, c);
+    } else if(greaterThanEqualTo(r, _p2, _pWords+1)) {
         sub2(r, _p2, c);
     } else if(greaterThanEqualTo(r, _p, _pWords+1)) {
         sub(r, _p, c);
@@ -153,6 +160,7 @@ static void reduceModP(const unsigned long *x, unsigned long *c)
 void initFp(BigInteger &p)
 {
     BigInteger p2 = p * 2;
+    BigInteger p3 = p * 3;
 
     // Precompute _m
     _pBits = p.getBitLength();
@@ -165,8 +173,10 @@ void initFp(BigInteger &p)
     // Convert P and M to words
     p.getWords(_p, _pWords);
     p2.getWords(_p2, p2.getWordLength());
+    p3.getWords(_p3, p3.getWordLength());
 
     _mWords = m.getWordLength();
+    _mBits = m.getBitLength();
 
     m.getWords(_m, _mWords);
 
