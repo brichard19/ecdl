@@ -137,6 +137,8 @@ def submit_points(id):
 
     content = request.json
 
+    modulus = pow(2, ctx.params.dBits)
+
     # Verify all points
     for i in range(len(content)):
         
@@ -146,7 +148,7 @@ def submit_points(id):
         y = parseInt(content[i]['y'])
 
         # Check that the x value has 0 bits on the end
-        if x % pow(2, ctx.params.dBits) != 0:
+        if x % modulus != 0:
             print("Not distinguished point! Rejecting!")
             return "", 400
 
@@ -159,6 +161,8 @@ def submit_points(id):
 
     foundCollision = False
 
+    conn = ctx.database.getConnection()
+
     # Write points to database
     for i in range(len(content)):
         a = parseInt(content[i]['a'])
@@ -167,9 +171,9 @@ def submit_points(id):
         y = parseInt(content[i]['y'])
 
         #Check for collision
-        dp = ctx.database.get(x, y)
+        dp = ctx.database.get(conn, x, y)
         if dp != None:
-            if dp['a'] != a and dp['b'] != b:
+            if dp['a'] != a or dp['b'] != b:
                 print("==== FOUND COLLISION ====")
                 print("a1: " + hex(a))
                 print("b1: " + hex(b))
@@ -183,8 +187,9 @@ def submit_points(id):
             else:
                 print("Point already exists in database. Rejecting.")
         else:
-            ctx.database.insert(a, b, x, y)
+            ctx.database.insert(conn, a, b, x, y)
 
+    ctx.database.closeConnection(conn)
     return ""
 
 '''

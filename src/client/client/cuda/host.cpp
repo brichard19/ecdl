@@ -19,6 +19,7 @@ void printBigInt(unsigned int *x, int len)
     }
     printf("\n");
 }
+
 /**
  * Checks if the kernel should still be running
  */
@@ -67,6 +68,7 @@ void ECDLCudaContext::extractBigInt(const unsigned int *ara, int block, int thre
 {
     extractBigInt(ara, threadsPerBlock * block + thread, index, x);
 }
+
 /**
  * Performs the opposite of splatBigInt. Reads an integer from coalesced form
  * into an array.
@@ -104,90 +106,7 @@ void ECDLCudaContext::setRPoints()
  */
 void ECDLCudaContext::setupDeviceConstants()
 {
-    unsigned int gx[ this->pBits * this->pLen ];
-    unsigned int gy[ this->pBits * this->pLen ];
-    unsigned int qx[ this->pBits * this->pLen ];
-    unsigned int qy[ this->pBits * this->pLen ];
-    unsigned int gqx[ this->pBits * this->pLen ];
-    unsigned int gqy[ this->pBits * this->pLen ];
-
-    memset(gx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
-    memset(gy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
-    memset(qx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
-    memset(qy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
-    memset(gqx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
-    memset(gqy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
-
-    ECPoint g(params.gx, params.gy);
-    ECPoint q(params.qx, params.qy);
-    ECPoint sum = this->curve.addPoint(g, q);
-
-    if(!this->curve.pointExists(g)) {
-        printf("G is not on the curve!\n");
-    }
-
-    if(!this->curve.pointExists(q)) {
-        printf("Q is not on the curve!\n");
-    }
-
-    // Convert Gx, Gy
-    BigInteger x = g.getX();
-    BigInteger y = g.getY();
-    x.getWords(gx);
-    y.getWords(gy);
-
-    // Convert Qx, Qy
-    x = q.getX();
-    y = q.getY();
-    x.getWords(qx);
-    y.getWords(qy); 
-
-    // Convert G+Q
-    x = sum.getX();
-    y = sum.getY();
-    x.getWords(gqx);
-    y.getWords(gqy);
-
-    // Generate 2G, 4G .. (2^130)G and 2Q, 4Q ... (2^130)Q
-    for(unsigned int i = 1; i < this->pBits; i++) {
-        g = this->curve.doublePoint(g);
-        q = this->curve.doublePoint(q);
-        sum = this->curve.addPoint(g, q);
-
-        if(!this->curve.pointExists(g)) {
-            printf("G is not on the curve!\n");
-        }
-        if(!this->curve.pointExists(q)) {
-            printf("Q is not on the curve!\n");
-        }
-    
-        if(!this->curve.pointExists(sum)) {
-            printf("G + Q is not on the curve!\n");
-        }
-
-        x = g.getX(); 
-        y = g.getY(); 
-        x.getWords(&gx[i * pLen]);
-        y.getWords(&gy[i * pLen]);
-      
-        x = q.getX();
-        y = q.getY();
-        x.getWords(&qx[i * pLen]);
-        y.getWords(&qy[i * pLen]);
-
-        x = sum.getX();
-        y = sum.getY();
-        x.getWords(&gqx[i * pLen]);
-        y.getWords(&gqy[i * pLen]);
-    }
-
-    // Copy points to device
     cudaError_t cudaError = cudaSuccess;
-
-    cudaError = copyMultiplesToDevice(gx, gy, qx, qy, gqx, gqy, this->pLen, this->pBits);
-    if(cudaError != cudaSuccess) {
-        throw cudaError;
-    }
 
     unsigned int pAra[this->pLen];
     this->p.getWords(pAra);
@@ -276,9 +195,118 @@ void ECDLCudaContext::generateMultipliersHost()
     }
 }
 
+void ECDLCudaContext::generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy)
+{
+    memset(gx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(gy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(qx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(qy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(gqx, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+    memset(gqy, 0, sizeof(unsigned int) * this->pBits * this->pLen);
+
+    ECPoint g(params.gx, params.gy);
+    ECPoint q(params.qx, params.qy);
+    ECPoint sum = this->curve.addPoint(g, q);
+
+    if(!this->curve.pointExists(g)) {
+        printf("G is not on the curve!\n");
+    }
+
+    if(!this->curve.pointExists(q)) {
+        printf("Q is not on the curve!\n");
+    }
+
+    // Convert Gx, Gy
+    BigInteger x = g.getX();
+    BigInteger y = g.getY();
+    x.getWords(gx);
+    y.getWords(gy);
+
+    // Convert Qx, Qy
+    x = q.getX();
+    y = q.getY();
+    x.getWords(qx);
+    y.getWords(qy); 
+
+    // Convert G+Q
+    x = sum.getX();
+    y = sum.getY();
+    x.getWords(gqx);
+    y.getWords(gqy);
+
+    // Generate 2G, 4G .. (2^130)G and 2Q, 4Q ... (2^130)Q
+    for(unsigned int i = 1; i < this->pBits; i++) {
+        g = this->curve.doublePoint(g);
+        q = this->curve.doublePoint(q);
+        sum = this->curve.addPoint(g, q);
+
+        if(!this->curve.pointExists(g)) {
+            printf("G is not on the curve!\n");
+        }
+        if(!this->curve.pointExists(q)) {
+            printf("Q is not on the curve!\n");
+        }
+    
+        if(!this->curve.pointExists(sum)) {
+            printf("G + Q is not on the curve!\n");
+        }
+
+        x = g.getX(); 
+        y = g.getY(); 
+        x.getWords(&gx[i * pLen]);
+        y.getWords(&gy[i * pLen]);
+      
+        x = q.getX();
+        y = q.getY();
+        x.getWords(&qx[i * pLen]);
+        y.getWords(&qy[i * pLen]);
+
+        x = sum.getX();
+        y = sum.getY();
+        x.getWords(&gqx[i * pLen]);
+        y.getWords(&gqy[i * pLen]);
+    }
+}
+
 void ECDLCudaContext::generateStartingPoints()
 {    
     cudaError_t cudaError = cudaSuccess;
+
+    unsigned int gx[ this->pBits * this->pLen ];
+    unsigned int gy[ this->pBits * this->pLen ];
+    unsigned int qx[ this->pBits * this->pLen ];
+    unsigned int qy[ this->pBits * this->pLen ];
+    unsigned int gqx[ this->pBits * this->pLen ];
+    unsigned int gqy[ this->pBits * this->pLen ];
+
+    generateLookupTable(gx, gy, qx, qy, gqx, gqy);
+
+    unsigned int *devGx = NULL;
+    unsigned int *devGy = NULL;
+    unsigned int *devQx = NULL;
+    unsigned int *devQy = NULL;
+    unsigned int *devGQx = NULL;
+    unsigned int *devGQy = NULL;
+
+    try {
+        unsigned int size = this->pBits * this->pLen * sizeof(unsigned int);
+        devGx = (unsigned int *)CUDA::malloc(size);
+        devGy = (unsigned int *)CUDA::malloc(size);
+        devQx = (unsigned int *)CUDA::malloc(size);
+        devQy = (unsigned int *)CUDA::malloc(size);
+        devGQx = (unsigned int *)CUDA::malloc(size);
+        devGQy = (unsigned int *)CUDA::malloc(size);
+
+        CUDA::memcpy(devGx, gx, size, cudaMemcpyHostToDevice);
+        CUDA::memcpy(devGy, gy, size, cudaMemcpyHostToDevice);
+        CUDA::memcpy(devQx, qx, size, cudaMemcpyHostToDevice);
+        CUDA::memcpy(devQy, qy, size, cudaMemcpyHostToDevice);
+        CUDA::memcpy(devGQx, gqx, size, cudaMemcpyHostToDevice);
+        CUDA::memcpy(devGQy, gqy, size, cudaMemcpyHostToDevice);
+    } catch(cudaError_t e) {
+        cudaError = e;
+        goto end;
+    }
 
     // Generate 'a' and 'b'
     generateMultipliersHost();
@@ -290,12 +318,27 @@ void ECDLCudaContext::generateStartingPoints()
     for(unsigned int i = 0; i < this->pBits; i++) {
         cudaError = multiplyAddG( this->blocks, this->threadsPerBlock,
                                   this->devAStart, this->devBStart,
+                                  devGx, devGy,
+                                  devQx, devQy,
+                                  devGQx, devGQy,
                                   this->devX, this->devY,
                                   this->devDiffBuf, this->devChainBuf,
                                   i, this->pointsPerThread );
         if( cudaError != cudaSuccess ) {
-            throw cudaError;
+            goto end;
         }
+    }
+
+end:
+    CUDA::free(devGx);
+    CUDA::free(devGy);
+    CUDA::free(devQx);
+    CUDA::free(devQy);
+    CUDA::free(devGQx);
+    CUDA::free(devGQy);
+
+    if(cudaError != cudaSuccess) {
+        throw cudaError;
     }
 }
 

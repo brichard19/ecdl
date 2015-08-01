@@ -8,24 +8,6 @@
 #define NUM_R_POINTS 32 // Must be a power of 2
 #define R_POINT_MASK (NUM_R_POINTS - 1)
 
-
-// TODO: Probably don't need these in constant memory as they are only
-// used once at the very beginning.
-/**
- * G, 2G, 4G ... (2^130)G
- */
-__constant__ unsigned int _gMultiplesX[ 10 * 131 ];
-__constant__ unsigned int _gMultiplesY[ 10 * 131 ];
-
-/**
- * Q, 2Q, 4Q ... (2^130)Q
- */
-__constant__ unsigned int _qMultiplesX[ 10 * 131 ];
-__constant__ unsigned int _qMultiplesY[ 10 * 131 ];
-
-__constant__ unsigned int _gqMultiplesX[ 10 * 131 ];
-__constant__ unsigned int _gqMultiplesY[ 10 * 131 ];
-
 /**
  * Bit mask for identifying distinguished points
  */
@@ -34,12 +16,12 @@ __constant__ unsigned int _MASK[ 2 ];
 /**
  * The X coordinates of the R points
  */
-__constant__ unsigned int _rx[ 5 * NUM_R_POINTS ];
+__constant__ unsigned int _rx[ 10 * NUM_R_POINTS ];
 
 /**
  * The Y coordinates of the Y points
  */
-__constant__ unsigned int _ry[ 5 * NUM_R_POINTS ];
+__constant__ unsigned int _ry[ 10 * NUM_R_POINTS ];
 
 /**
  * Shared memory to hold the R points
@@ -92,7 +74,7 @@ template<int N> __device__ void doMultiplication( const unsigned int *aMultiplie
                                   const unsigned int *gqx, const unsigned int *gqy,
                                   unsigned int *rxAra, unsigned int *ryAra,
                                   unsigned int *diffBuf, unsigned int *chainBuf,
-                                  int step, int count )
+                                  int step, int count)
 {
     unsigned int product[N] = {0};
     product[0] = 1;
@@ -215,7 +197,10 @@ template<int N> __device__ void doMultiplication( const unsigned int *aMultiplie
     
 }
 
-__global__ void computeProductGKernel( unsigned int *a, unsigned int *b,
+__global__ void computeProductGKernel( const unsigned int *a, const unsigned int *b,
+                                       const unsigned int *gx, const unsigned int *gy,
+                                       const unsigned int *qx, const unsigned int *qy,
+                                       const unsigned int *gqx, const unsigned int *gqy,
                                        unsigned int *rx, unsigned int *ry,
                                        unsigned int *diffBuf, unsigned int *chainBuf,
                                        int step, int count )
@@ -224,27 +209,27 @@ __global__ void computeProductGKernel( unsigned int *a, unsigned int *b,
         case 2:
         initFp();
         initSharedMem<2>();
-        doMultiplication<2>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        doMultiplication<2>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
         break; 
         case 3:
         initFp();
         initSharedMem<3>();
-        doMultiplication<3>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        doMultiplication<3>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
         break;
         case 4:
         initFp();
         initSharedMem<4>();
-        doMultiplication<4>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        doMultiplication<4>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
         break;
         case 5:
         initFp();
         initSharedMem<5>();
-        doMultiplication<5>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        doMultiplication<5>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
         break;
         case 6:
         initFp();
         initSharedMem<6>();
-        doMultiplication<6>( a, b, _gMultiplesX, _gMultiplesY, _qMultiplesX, _qMultiplesY, _gqMultiplesX, _gqMultiplesY, rx, ry, diffBuf, chainBuf, step, count ); 
+        doMultiplication<6>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
         break;
     }
 }
@@ -303,44 +288,6 @@ __global__ void resetPointsKernel( unsigned int *rx, unsigned int *ry, int count
     }
 }
 
-/**
- * Copies G, 2G, 4G ... (2^(n-1)) and Q, 2Q, 4Q ... (2^(n-1))Q to constant memory
- */
-cudaError_t copyMultiplesToDevice(const unsigned int *px, const unsigned int *py, const unsigned int *qx, const unsigned int *qy, const unsigned int *gqx, const unsigned int *gqy, unsigned int len, unsigned int count)
-{
-    cudaError_t cudaError = cudaSuccess;
-    unsigned int size = len * count * sizeof(unsigned int);
-
-    cudaError = cudaMemcpyToSymbol( _gMultiplesX, px, size, 0, cudaMemcpyHostToDevice );
-    if( cudaError != cudaSuccess ) {
-        goto end;
-    }
-
-    cudaError = cudaMemcpyToSymbol( _gMultiplesY, py, size, 0, cudaMemcpyHostToDevice );
-    if( cudaError != cudaSuccess ) {
-        goto end;
-    }
-
-    cudaError = cudaMemcpyToSymbol( _qMultiplesX, qx, size, 0, cudaMemcpyHostToDevice );
-    if( cudaError != cudaSuccess ) {
-        goto end;
-    }
-
-    cudaError = cudaMemcpyToSymbol( _qMultiplesY, qy, size, 0, cudaMemcpyHostToDevice );
-    if( cudaError != cudaSuccess ) {
-        goto end;
-    }
-
-    cudaError = cudaMemcpyToSymbol( _gqMultiplesX, gqx, size, 0, cudaMemcpyHostToDevice);
-    if( cudaError != cudaSuccess ) {
-        goto end;
-    }
-
-    cudaError = cudaMemcpyToSymbol( _gqMultiplesY, gqy, size, 0, cudaMemcpyHostToDevice);
-
-end:
-    return cudaError;
-}
 
 /**
  * Sets the number of distinguished bits to look for
@@ -455,12 +402,15 @@ end:
 }
 
 cudaError_t multiplyAddG( int blocks, int threads,
-                          unsigned int *a, unsigned int *b,
+                          const unsigned int *a, const unsigned int *b,
+                          const unsigned int *gx, const unsigned int *gy,
+                          const unsigned int *qx, const unsigned int *qy,
+                          const unsigned int *gqx, const unsigned int *gqy,
                           unsigned int *rx, unsigned int *ry,
                           unsigned int *diffBuf, unsigned int *chainBuf,
                           int step, int count )
 {
-    computeProductGKernel<<<blocks, threads>>>( a, b, rx, ry, diffBuf, chainBuf, step, count );
+    computeProductGKernel<<<blocks, threads>>>(a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count);
     return cudaDeviceSynchronize();
 }
 

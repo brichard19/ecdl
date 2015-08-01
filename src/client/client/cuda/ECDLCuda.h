@@ -89,7 +89,7 @@ private:
     void writeYToDevice(unsigned int *y, unsigned int threadId, unsigned int index);
     void writeAToDevice(unsigned int *a, unsigned int threadId, unsigned int index);
     void writeBToDevice(unsigned int *b, unsigned int threadId, unsigned int index);
-    
+    void generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy);
     void splatBigInt(const unsigned int *x, unsigned int *ara, int thread, int index );
     void splatBigInt(const unsigned int *x, unsigned int *ara, int block, int thread, int index );
     void extractBigInt(const unsigned int *ara, int thread, int index, unsigned int *x);

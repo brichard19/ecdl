@@ -17,20 +17,16 @@ cudaError_t copyMultiplesToDevice( const unsigned int *px,
 
 cudaError_t copyRPointsToDevice(const unsigned int *rx, const unsigned int *ry, int length, int count);
 
-cudaError_t multiplyAddQ( int blocks,
-                          int threads,
-                          unsigned int *multiplier,
-                          unsigned int *rx,
-                          unsigned int *ry,
-                          unsigned int *diffBuf,
-                          unsigned int *chainBuf,
-                          int step,
-                          int count );
-
 cudaError_t multiplyAddG( int blocks,
                           int threads,
-                          unsigned int *a,
-                          unsigned int *b,
+                          const unsigned int *a,
+                          const unsigned int *b,
+                          const unsigned int *gx,
+                          const unsigned int *gy,
+                          const unsigned int *qx,
+                          const unsigned int *qy,
+                          const unsigned int *gqx,
+                          const unsigned int *gqy,
                           unsigned int *rx,
                           unsigned int *ry,
                           unsigned int *diffBuf,

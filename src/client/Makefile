@@ -2,15 +2,19 @@ INCLUDE += -I$(shell pwd)/include
 LIBDIR=$(shell pwd)/lib
 LIBS+=-L$(LIBDIR)
 
-
+# C++ options
 CXX=g++
 CXXFLAGS=-O2
-NASM=nasm
+
+# CUDA variables
 COMPUTE_CAP=30
 NVCC=nvcc
 NVCCFLAGS=-gencode=arch=compute_${COMPUTE_CAP},code=\"sm_${COMPUTE_CAP}\" -Xcompiler "${CXXFLAGS}"
 CUDA_LIB=/usr/local/cuda/lib64
 CUDA_INCLUDE=/usr/local/cuda/include
+
+# ASM variables
+NASM=nasm
 X86_ASM=0
 
 export INCLUDE

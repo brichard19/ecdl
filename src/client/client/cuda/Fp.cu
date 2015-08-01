@@ -146,6 +146,7 @@ template<int N> __device__ void readBigInt(const unsigned int *ara, int idx, uns
     unsigned int numThreads = gridDim.x * blockDim.x;
     unsigned int threadIndex = blockDim.x * blockIdx.x + threadIdx.x;
 
+    #pragma unroll
     for(int i = 0; i < N; i++ ) {
         x[ i ] = ara[ N * numThreads * idx + numThreads * i + threadIndex ];
     }
@@ -167,6 +168,7 @@ template<int N> __device__ void writeBigInt(unsigned int *ara, int idx, const un
     unsigned int numThreads = gridDim.x * blockDim.x;
     unsigned int threadIndex = blockDim.x * blockIdx.x + threadIdx.x;
 
+    #pragma unroll
     for(int i = 0; i < N; i++) {
         ara[ N * numThreads * idx + numThreads * i + threadIndex ] = x[ i ];
     }
