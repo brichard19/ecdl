@@ -45,7 +45,9 @@ public:
     size_t getBitLength();
     size_t getByteLength();
     size_t getWordLength();
-    size_t getIntWordLength();
+    size_t getLength32();
+    size_t getLength64();
+    size_t getLengthNative();
     void getWords( unsigned long *words, size_t size );
     void getWords( unsigned int *words, size_t size );
     void getWords(unsigned int *words);

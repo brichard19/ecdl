@@ -21,11 +21,9 @@ ECDLCpuContext::ECDLCpuContext( unsigned int numThreads,
     _running = false;
  
     // Copy random walk points
-    Logger::logInfo("R points:");
     for(int i = 0; i < rPoints; i++) {
         _rx[i] = rx[i];
         _ry[i] = ry[i];
-        Logger::logInfo("%.2x [%s,%s]", i, _rx[i].toString().c_str(), _ry[i].toString().c_str());
     }
 
     // Set up curve using parameters 
@@ -132,7 +130,6 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
 
     for(int i = 0; i < numThreads; i++) {
         threads[i].wait();
-        printf("Thread %d took %d ms\n", i, params[i].t);
     }
 
     unsigned long long iterationsPerSecond = 0;
@@ -141,10 +138,6 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
         float seconds = (float)(params[i].t)/1000;
         unsigned long long threadIterations = (unsigned long long)((float)iterations / seconds);
         unsigned long long threadPoints = (iterations * pointsPerThread)/seconds;
-
-        Logger::logInfo("thread %d: %d iterations in %.2fs (%lld iterations per second)", i, iterations, seconds, threadIterations);
-       
-        Logger::logInfo("%lld points per second", threadPoints);
 
         iterationsPerSecond += threadIterations;
         pointsPerSecond += threadPoints;

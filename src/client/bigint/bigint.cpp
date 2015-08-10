@@ -246,12 +246,27 @@ size_t BigInteger::getWordLength()
     return (bits + wordSize - 1) / wordSize;
 }
 
-size_t BigInteger::getIntWordLength()
+size_t BigInteger::getLengthNative()
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
-    int wordSize = sizeof(unsigned int)*8;
+    int wordSize = sizeof(unsigned long)*8;
 
     return (bits + wordSize - 1) / wordSize;
+}
+
+size_t BigInteger::getLength32()
+{
+    size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
+
+    return (bits + 31) / 32;
+}
+
+size_t BigInteger::getLength64()
+{
+    size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
+    int wordSize = sizeof(unsigned long)*8;
+
+    return (bits + 63) / 64;
 }
 
 void BigInteger::getWords(unsigned long *words, size_t size)

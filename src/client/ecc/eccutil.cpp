@@ -10,7 +10,6 @@ void generateRPoints(ECCurve curve, ECPoint q, BigInteger *aAra, BigInteger *bAr
     BigInteger order = curve.n();
     BigInteger modulus = curve.p();
 
-    printf("Generating R points\n");
     // Generate random Ri = aiG + biQ
     for( int i = 0; i < n; i++ ) {
         ECPoint r1;

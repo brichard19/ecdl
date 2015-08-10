@@ -245,33 +245,6 @@ int main(int argc, char **argv)
     // TODO: Use proper RNG
     srand(util::getSystemTime());
 
-    // Check for CUDA devices
-#ifdef _CUDA
-    unsigned int major;
-    unsigned int minor;
-    unsigned int mpCount;
-    unsigned long long mem;
-
-    if(CUDA::getDeviceCount() == 0) {
-        Logger::logError("No CUDA devices detected\n");
-        return 1;
-    }
-
-    // Get device info
-    try {
-        CUDA::getDeviceInfo(0, &major, &minor, &mpCount, &mem);
-    }catch(cudaError_t cudaError) { 
-        Logger::logError("Error getting device info: %s\n", cudaGetErrorString(cudaError));
-        return 1;
-    }
-  
-    Logger::logInfo("Device info:");
-    Logger::logInfo("version:  %d.%d", major, minor);
-    Logger::logInfo("MP count: %d", mpCount);
-    Logger::logInfo("Memory:   %lldMB", mem/1048576);
-    Logger::logInfo("");
-#endif
-    
     // Load configuration
     try {
         _config = loadConfig("settings.json");
@@ -280,6 +253,33 @@ int main(int argc, char **argv)
         return 1; 
     }
 
+    // Check for CUDA devices
+#ifdef _CUDA
+    CUDA::DeviceInfo devInfo;
+    cudaError_t cudaError = cudaSuccess;
+
+    if(CUDA::getDeviceCount() == 0) {
+        Logger::logError("No CUDA devices detected\n");
+        return 1;
+    }
+
+    // Get device info
+    try {
+        CUDA::getDeviceInfo(_config.device, devInfo);
+    }catch(cudaError_t cudaError) {
+        Logger::logError("Error getting info for device %d: %s\n", _config.device, cudaGetErrorString(cudaError));
+        return 1;
+    }
+  
+    Logger::logInfo("Device info:");
+    Logger::logInfo("Name:     %s", devInfo.name.c_str());
+    Logger::logInfo("version:  %d.%d", devInfo.major, devInfo.minor);
+    Logger::logInfo("MP count: %d", devInfo.mpCount);
+    Logger::logInfo("Cores:    %d", devInfo.mpCount * devInfo.cores);
+    Logger::logInfo("Memory:   %lldMB", devInfo.globalMemory/1048576);
+    Logger::logInfo("");
+#endif
+    
 //TODO: Properly parse arguments (getopt?)
     // Run benchmark on -b option
     if(argc >= 2 && strcmp(argv[1], "-b") == 0) {

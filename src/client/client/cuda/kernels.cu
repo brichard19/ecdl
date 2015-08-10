@@ -231,6 +231,16 @@ __global__ void computeProductGKernel( const unsigned int *a, const unsigned int
         initSharedMem<6>();
         doMultiplication<6>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
         break;
+        case 7:
+        initFp();
+        initSharedMem<7>();
+        doMultiplication<7>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
+        break;
+        case 8:
+        initFp();
+        initSharedMem<8>();
+        doMultiplication<8>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, count ); 
+        break;
     }
 }
 
@@ -259,6 +269,14 @@ template<int N> __device__ void resetPointsFunc(unsigned int *rx, unsigned int *
             writeBigInt<6>( rx, i, _pointAtInfinity );
             writeBigInt<6>( ry, i, _pointAtInfinity );
             break;
+            case 7:
+            writeBigInt<7>( rx, i, _pointAtInfinity );
+            writeBigInt<7>( ry, i, _pointAtInfinity );
+            break;
+            case 8:
+            writeBigInt<8>( rx, i, _pointAtInfinity );
+            writeBigInt<8>( ry, i, _pointAtInfinity );
+            break;
         }
     }
 
@@ -284,6 +302,12 @@ __global__ void resetPointsKernel( unsigned int *rx, unsigned int *ry, int count
         break;
         case 6:
         resetPointsFunc<6>(rx, ry, count);
+        break;
+        case 7:
+        resetPointsFunc<7>(rx, ry, count);
+        break;
+        case 8:
+        resetPointsFunc<8>(rx, ry, count);
         break;
     }
 }
@@ -558,6 +582,12 @@ __global__ void doStepKernel( unsigned int *xAra,
         break;
         case 6:
         doStep<6>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
+        case 7:
+        doStep<7>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
+        break;
+        case 8:
+        doStep<8>(xAra, yAra, diffBuf, chainBuf, pointFound, pointThreadId, blockFlags, flags, count);
         break;
     }
 }

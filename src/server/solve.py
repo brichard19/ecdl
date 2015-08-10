@@ -56,7 +56,7 @@ def checkForRobinHood(curve, start, end, start2, rPoints):
 '''
 Gets the total length of the random walk
 '''
-def getLength(curve, startA, startB, startPoint, endPoint, rPoints):
+def getLength(curve, startA, startB, startPoint, endPoint, rPoints, dBits):
 
     point = startPoint
     a = startA
@@ -65,6 +65,8 @@ def getLength(curve, startA, startB, startPoint, endPoint, rPoints):
     i = 0
     length = 1
 
+    # We want to terminate the walk if it is statistically too long
+    limit = (2**dBits) * 4
     while True:
         idx = point.x & 0x1f
       
@@ -81,9 +83,9 @@ def getLength(curve, startA, startB, startPoint, endPoint, rPoints):
         a = (a + rPoints[idx]['a']) % curve.n
         b = (b + rPoints[idx]['b']) % curve.n
 
-        if i > 28000000:
-            print("Too many iterations. Exiting.")
-            return length
+        if i > limit:
+            print("Walk is too long. Terminating")
+            return -1
 
     return length
 
@@ -111,7 +113,7 @@ def nextPoint(curve, a, b, point, rPoints):
 '''
 Given two walks with the same ending point, it finds where the walks collide.
 '''
-def findCollision(curve, g, q, a1Start, b1Start, p1Start, a2Start, b2Start, p2Start, endPoint, rPoints):
+def findCollision(curve, g, q, a1Start, b1Start, p1Start, a2Start, b2Start, p2Start, endPoint, rPoints, dBits):
 
     a1 = a1Start
     b1 = b1Start
@@ -120,10 +122,17 @@ def findCollision(curve, g, q, a1Start, b1Start, p1Start, a2Start, b2Start, p2St
     b2 = b2Start
 
     print("Counting walk 1 length")
-    p1Len = getLength(curve, a1, b1, p1Start, endPoint, rPoints)
+    p1Len = getLength(curve, a1, b1, p1Start, endPoint, rPoints, dBits)
+
+    if p1Len < 0:
+        return None, None, None, None, None, None
     print(str(p1Len))
+
     print("Counting walk 2 length")
-    p2Len = getLength(curve, a2, b2, p2Start, endPoint, rPoints)
+    p2Len = getLength(curve, a2, b2, p2Start, endPoint, rPoints, dBits)
+   
+    if p2Len < 0:
+        return None, None, None, None, None, None
     print(str(p2Len))
 
     # For simplicity, we want P1 to always be the longer one
@@ -137,7 +146,7 @@ def findCollision(curve, g, q, a1Start, b1Start, p1Start, a2Start, b2Start, p2St
 
     if checkForRobinHood(curve, p1Start, endPoint, p2Start, rPoints):
         print("It's a Robin Hood :(")
-        return None
+        return None, None, None, None, None, None
     else:
         print("Not a Robin Hood :)") 
 
@@ -190,11 +199,17 @@ def main():
     y = parseInt(sys.argv[6])
 
     name = sys.argv[7]
+   
+    try:
+        ecdl.loadConfig("config/config.json")
+    except:
+        print("Error opening config: " + sys.exc_info[0])
+        sys.exit(1)
 
-    ecdl.loadConfig('config/config.json')
-    ctx = ecdl.loadContext('work/' + name + '.json')
+    ctx = ecdl.loadContext(name)
     curve = ctx.curve
     rPoints = ctx.rPoints
+    dBits = ctx.params.dBits
 
     g = ECPoint(ctx.params.gx, ctx.params.gy)
     q = ECPoint(ctx.params.qx, ctx.params.qy)
@@ -204,7 +219,10 @@ def main():
     p1Start = curve.add(curve.multiply(a1, g), curve.multiply(b1, q))
     p2Start = curve.add(curve.multiply(a2, g), curve.multiply(b2, q))
 
-    a1, b1, point1, a2, b2, point2 = findCollision(curve, g, q, a1, b1, p1Start, a2, b2, p2Start, endPoint, rPoints)
+    a1, b1, point1, a2, b2, point2 = findCollision(curve, g, q, a1, b1, p1Start, a2, b2, p2Start, endPoint, rPoints, dBits)
+
+    if a1 == None:
+        return
 
     k = (((a1 - a2)%curve.n) * invm(b2 - b1, curve.n)) % curve.n
     r = curve.multiply(k, g)

@@ -4,6 +4,7 @@ import os
 import random
 import sys
 import ecdl
+from util import ECDLPParams
 
 from MySQLPointDatabase import MySQLPointDatabase
 from pprint import pprint
@@ -34,11 +35,14 @@ def getContext(id):
 
 
 def loadAllContexts():
-    files = os.listdir('work')
+    names = ecdl.Database.getNames()
 
-    for f in files:
-        print("Reading Context" + f)
-        ctx = ecdl.loadContext('work/' + f)
+    if names == None:
+        return
+
+    for n in names:
+        print("Reading Context" + n)
+        ctx = ecdl.loadContext(n)
         _ctx[ctx.name] = ctx
 
 
@@ -98,7 +102,8 @@ def create(id):
 
     content = request.json
 
-    params = ecdl.ECDLPParams(content['params'])
+    params = ECDLPParams()
+    params.decode(content['params'])
 
     print("Creating context")
     ctx = ecdl.createContext(params, id)
@@ -147,6 +152,12 @@ def submit_points(id):
         x = parseInt(content[i]['x'])
         y = parseInt(content[i]['y'])
 
+        if a >= ctx.curve.n or b >= ctx.curve.n:
+            print("Invalid exponents:")
+            print(str(a))
+            print(str(b))
+            return "", 400
+
         # Check that the x value has 0 bits on the end
         if x % modulus != 0:
             print("Not distinguished point! Rejecting!")
@@ -161,7 +172,7 @@ def submit_points(id):
 
     foundCollision = False
 
-    conn = ctx.database.getConnection()
+    ctx.database.open()
 
     # Write points to database
     for i in range(len(content)):
@@ -171,7 +182,7 @@ def submit_points(id):
         y = parseInt(content[i]['y'])
 
         #Check for collision
-        dp = ctx.database.get(conn, x, y)
+        dp = ctx.database.get(x, y)
         if dp != None:
             if dp['a'] != a or dp['b'] != b:
                 print("==== FOUND COLLISION ====")
@@ -187,9 +198,10 @@ def submit_points(id):
             else:
                 print("Point already exists in database. Rejecting.")
         else:
-            ctx.database.insert(conn, a, b, x, y)
+            ctx.database.insert(a, b, x, y)
 
-    ctx.database.closeConnection(conn)
+    ctx.database.close()
+
     return ""
 
 '''

@@ -13,6 +13,81 @@
 
 #include "util.h"
 
+static const char *_paramStrings[][8] = {
+    {
+        "10346548290527483921", // p
+        "8213110108256840705",  // a
+        "5359355018093152257",  // b
+        "10346548285891636157", // n
+
+        "2516376822311234657",  // gx
+        "4288374045943717916",  // gy
+
+        "5062051216356272720",  // qx
+        "8555742863554926061"   // qy
+    },
+    {
+        "78981521739689554908020736013",
+        "58784168200570774359499603969",
+        "47494327795442261632384761857",
+        "78981521739689465582500230217",
+
+        "18103986262720072890098715416",
+        "52944065473593986531071869154",
+
+        "748975810752021896566294904",
+        "27241524238649937039403119779"
+    },
+    {
+        "200928183426328164807859180258556117041",
+        "86691786142570278779847599195353513985",
+        "110242031934209319368482290082496118785",
+        "200928183426328164802453963091476992749",
+
+        "64750113582711562095673901358611790991",
+        "48363172895708030153257722930462146474",
+
+        "26076691982360896544369846918428630918",
+        "136810230350086971534375335248495674369"
+    },
+    {
+        "865806661822871998623160485581077455704841781483",
+        "409134317488780658785352322416272562458671972353",
+        "137070141856338712184360102975493199442378489857",
+        "865806661822871998623159860641677594758258670073",
+
+        "840665358702132694797322237271982618142154224941",
+        "170744561051647536319710637442406320214802928748",
+
+        "510642232687460243288359605410492948380688537005",
+        "379030859946867953298980230660914598579105762000"
+    },
+    {
+        "3287620281068379841326166099363253391071869123043868541117",
+        "1253356721748952464022637580491996618124230631347693027329",
+        "1709831987121145453285182085135647694393587792211810975745",
+        "3287620281068379841326166099359249568449273560353013620147",
+
+        "1655536773327969337442160376548055971211387649095171974415",
+        "777824550077092965471860025935337052275515268507535242467",
+
+        "37626691205442454457877423801261059929491832007111212301",
+        "1255236264293804341975890212966073212491138693635972262025"
+    },
+    {
+        "20808685163008145908235023645553668146435030868584130872857791037659",
+        "17844349681778935434661105936076298713967005369370891804661870755841",
+        "7605732306787334301343640825373619088025286957757700551773180133377",
+        "20808685163008145908235023645553664404297390168478224022643977635197",
+
+        "4601116937491803330253385207580447122436304623872407352894717558269",
+        "1817948758263560681394000696005448808262808471329486120513420912604",
+
+        "9728980498913250221612222565486170926088128648755254481964477778254",
+        "7758514135545535486433083143040083446671723285043190155310745444754"
+    }
+};
+
 void doBenchmark()
 {
     #ifdef _CUDA
@@ -21,30 +96,33 @@ void doBenchmark()
     ECDLCpuContext *ctx;
     #endif
 
-    ECDLPParams params[1];
     BigInteger rx[ 32 ];
     BigInteger ry[ 32 ];
-    params[0].p = BigInteger("48E1D43F293469E33194C43186B3ABC0B", 16);
-    params[0].a = BigInteger("41CB121CE2B31F608A76FC8F23D73CB66", 16);
-    params[0].b = BigInteger("2F74F717E8DEC90991E5EA9B2FF03DA58", 16);
-    params[0].n = BigInteger("48E1D43F293469E317F7ED728F6B8E6F1", 16);
-    params[0].gx = BigInteger("03DF84A96B5688EF574FA91A32E197198A", 16);
-    params[0].gy = BigInteger("014721161917A44FB7B4626F36F0942E71", 16);
-    params[0].qx = BigInteger("03AA6F004FC62E2DA1ED0BFB62C3FFB568", 16);
-    params[0].qy = BigInteger("009C21C284BA8A445BB2701BF55E3A67ED", 16);
-    params[0].dBits = 32;
 
-    ECCurve curve(params[0].p, params[0].n, params[0].a, params[0].b, params[0].gx, params[0].gy);
-    generateRPoints(curve, ECPoint(params[0].qx, params[0].qy), NULL, NULL, rx, ry, 32);
+    for(int i = 0; i < 6; i++) {
+        ECDLPParams params;
+        params.p = BigInteger(_paramStrings[i][0]);
+        params.a = BigInteger(_paramStrings[i][1]);
+        params.b = BigInteger(_paramStrings[i][2]);
+        params.n = BigInteger(_paramStrings[i][3]);
+        params.gx = BigInteger(_paramStrings[i][4]);
+        params.gy = BigInteger(_paramStrings[i][5]);
+        params.qx = BigInteger(_paramStrings[i][6]);
+        params.qy = BigInteger(_paramStrings[i][7]);
+        params.dBits = 32;
 
-    Logger::logInfo("Running benchmark...");
-    #ifdef _CUDA
-    ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.pointsPerThread, &params[0], rx, ry, 32, NULL);
-    ctx->init();
-    ctx->benchmark(NULL);
-    #else
-    ctx = new ECDLCpuContext(_config.threads, _config.pointsPerThread, &params[0], rx, ry, 32, NULL);
-    ctx->init();
-    ctx->benchmark(NULL);
-    #endif
+        ECCurve curve(params.p, params.n, params.a, params.b, params.gx, params.gy);
+        generateRPoints(curve, ECPoint(params.qx, params.qy), NULL, NULL, rx, ry, 32);
+
+        Logger::logInfo("Running benchmark...");
+        #ifdef _CUDA
+        ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
+        #else
+        ctx = new ECDLCpuContext(_config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
+        #endif
+        ctx->init();
+        ctx->benchmark(NULL);
+        delete ctx;
+    }
+
 }

@@ -91,11 +91,7 @@ namespace CUDA {
     /**
      * Function to get device information
      */
-    void getDeviceInfo(int device,
-                        unsigned int *deviceMajor,
-                        unsigned int *deviceMinor,
-                        unsigned int *mpCount,
-                        unsigned long long *globalMemory)
+    void getDeviceInfo(int device, DeviceInfo &devInfo )
     {
         cudaDeviceProp properties;
         cudaError_t cudaError = cudaSuccess;
@@ -110,9 +106,27 @@ namespace CUDA {
             throw cudaError;
         }
 
-        *deviceMajor = properties.major;
-        *deviceMinor = properties.minor;
-        *mpCount = properties.multiProcessorCount;
-        *globalMemory = properties.totalGlobalMem;
+        devInfo.major = properties.major;
+        devInfo.minor = properties.minor;
+        devInfo.mpCount = properties.multiProcessorCount;
+        devInfo.globalMemory = properties.totalGlobalMem;
+        devInfo.name = std::string(properties.name);
+
+        int cores = 0;
+        switch(devInfo.major) {
+            case 1:
+                cores = 8;
+                break;
+            case 2:
+                cores = devInfo.minor == 0 ? 32 : 48;
+                break;
+            case 3:
+                cores = 192;
+                break;
+            case 5:
+                cores = 128;
+                break;
+        }
+        devInfo.cores = cores;
     }
 }

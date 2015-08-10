@@ -89,8 +89,6 @@ void initThreadGlobals(ECDLPParams *params,
     unsigned int pLen = p.getWordLength();
     _pLen = pLen;
 
-    printf("P is %d words\n", _pLen);
-
     // Pointer to the coefficients of the starting points
     _a = a;
     _b = b;
@@ -123,19 +121,11 @@ void initThreadGlobals(ECDLPParams *params,
     _mask = ~0;
     _mask >>= WORD_LENGTH_BITS - dBits;
 
-    printf("Mask: ");
-    util::printHex(_mask);
-    printf("\n");
-
     // Mask for selecting R point
     _rPointMask = numRPoints - 1;
-    printf("R Mask: %.8x\n", _rPointMask);
 
     // Gets called when distinguished point is found
     _callback = callback;
-    if(_callback == NULL) {
-        printf("Callback is NULL\n");
-    }
 }
 
 void cleanupThreadGlobals()
@@ -265,14 +255,11 @@ void *benchmarkThreadFunction(void *p)
 
     unsigned int threadId = params->threadId;
 
-    printf("Starting benchmark thread %d\n", threadId);
     unsigned int t0 = util::getSystemTime();
     for(unsigned int i = 0; i < params->iterations; i++) {
         doStep(threadId);
     }
     params->t = util::getSystemTime() - t0;
-
-    printf("Exiting benchmark thread %d\n", threadId);
 
     return NULL;
 }
@@ -281,13 +268,11 @@ void *workerThreadFunction(void *p)
 {
     WorkerThreadParams *params = (WorkerThreadParams *)p;
 
-    printf("Thread %d started\n", params->threadId);
     unsigned int threadId = params->threadId;
 
     while(params->running) {
         doStep(threadId);
     }
-    printf("Thread %d exiting\n", params->threadId);
 
     return NULL;
 }

@@ -119,11 +119,11 @@ void ECDLCudaContext::setupDeviceConstants()
     pMinus2.getWords(pMinus2Ara);
 
     BigInteger pTimes2 = this->p * 2;
-    unsigned int pTimes2Ara[pTimes2.getWordLength()];
+    unsigned int pTimes2Ara[pTimes2.getLength32()];
     pTimes2.getWords(pTimes2Ara);
 
     BigInteger pTimes3 = this->p * 3;
-    unsigned int pTimes3Ara[pTimes3.getWordLength()];
+    unsigned int pTimes3Ara[pTimes3.getLength32()];
     pTimes3.getWords(pTimes3Ara);
 
     cudaError = initDeviceParams(pAra, this->pBits, mAra, this->mBits, pMinus2Ara, pTimes2Ara, pTimes3Ara, params.dBits);
@@ -396,7 +396,7 @@ void ECDLCudaContext::allocateBuffers()
     Logger::logInfo("%d threads (%d threads per block)", this->threads, this->threadsPerBlock);
     Logger::logInfo("%d points in parallel (%d points per thread)",
             this->threads * this->pointsPerThread, this->pointsPerThread);
-
+    
     // Allocate 'a' values in host memory
     this->AStart = (unsigned int *)CUDA::hostAlloc(arraySize, cudaHostAllocMapped);
     memset( this->AStart, 0, arraySize );
@@ -531,19 +531,10 @@ ECDLCudaContext::ECDLCudaContext( int device, unsigned int blocks,
     this->mBits = this->m.getBitLength();
     this->mLen = (this->mBits + 31) / 32;
 
-    Logger::logInfo("P bits: %d", this->pBits);
-    Logger::logInfo("P words: %d", this->pLen);
-    Logger::logInfo("P:      %s", this->p.toString().c_str());
-    Logger::logInfo("M:    %s", this->m.toString().c_str());
-    Logger::logInfo("M bits: %d", this->mBits);
-    Logger::logInfo("M words: %d", this->mLen);
-
     // Copy random walk points
-    Logger::logInfo("R points:");
     for(int i = 0; i < rPoints; i++) {
         this->rx[ i ] = rx[ i ];
         this->ry[ i ] = ry[ i ];
-        Logger::logInfo("%.2x [%s,%s]", i, this->rx[i].toString().c_str(), this->ry[i].toString().c_str());
     }
     Logger::logInfo(""); 
     this->curve = ECCurve(this->params.p, this->params.n, this->params.a, this->params.b, this->params.gx, this->params.gy);
@@ -596,7 +587,6 @@ bool ECDLCudaContext::run()
     unsigned long long iterations = 0;
     bool running = true;
 
-    Logger::logInfo("Running");
     setRunFlag(true);
 
     do {
@@ -639,35 +629,34 @@ bool ECDLCudaContext::run()
 
                         unsigned int x[this->pLen];
                         unsigned int y[this->pLen];
-                        unsigned int Astart[this->pLen];
-                        unsigned int Bstart[this->pLen];
+                        unsigned int a[this->pLen];
+                        unsigned int b[this->pLen];
 
-                        memset(x, 0, sizeof(x));
-                        memset(y, 0, sizeof(x));
-                        memset(Astart, 0, sizeof(x));
-                        memset(Bstart, 0, sizeof(x));
+                        memset(x, 0, this->pLen * sizeof(unsigned int));
+                        memset(y, 0, this->pLen * sizeof(unsigned int));
+                        memset(a, 0, this->pLen * sizeof(unsigned int));
+                        memset(b, 0, this->pLen * sizeof(unsigned int));
 
                         readXFromDevice(threadId, pointIndex, x);
                         readYFromDevice(threadId, pointIndex, y);
-                        extractBigInt(this->AStart, block, thread, pointIndex, Astart);
-                        extractBigInt(this->BStart, block, thread, pointIndex, Bstart);
+                        extractBigInt(this->AStart, block, thread, pointIndex, a);
+                        extractBigInt(this->BStart, block, thread, pointIndex, b);
 
                         BigInteger xBig(x, this->pLen);
                         BigInteger yBig(y, this->pLen);
-                        BigInteger aStartBig(Astart, this->pLen);
-                        BigInteger bStartBig(BStart, this->pLen);
-
+                        BigInteger aBig(a, this->pLen);
+                        BigInteger bBig(b, this->pLen);
                         if(!verifyPoint(xBig, yBig)) {
                             Logger::logError( "==== INVALID POINT ====\n" );
                             printf("Index: %d\n", pointIndex);
                             printf("Thread: %d\n", thread);
                             printf("Block: %d\n", block);
-                            Logger::logError("%s %s\n", aStartBig.toString(16).c_str(), bStartBig.toString(16).c_str());
+                            Logger::logError("%s %s\n", aBig.toString(16).c_str(), bBig.toString(16).c_str());
                             Logger::logError("[%s, %s]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
                             printf("a: ");
-                            printBigInt(AStart, this->pLen);
+                            printBigInt(a, this->pLen);
                             printf("b: ");
-                            printBigInt(BStart, this->pLen);
+                            printBigInt(b, this->pLen);
                             printf("x: ");
                             printBigInt(x, this->pLen);
                             printf("y: ");
@@ -676,8 +665,8 @@ bool ECDLCudaContext::run()
                         }
                         
                         struct CallbackParameters p;
-                        p.aStart = aStartBig;
-                        p.bStart = bStartBig;
+                        p.aStart = aBig;
+                        p.bStart = bBig;
                         p.x = xBig;
                         p.y = yBig;
 
@@ -709,11 +698,11 @@ bool ECDLCudaContext::run()
     return true;
 }
 
-bool ECDLCudaContext::benchmark( unsigned long long *pointsPerSecond )
+bool ECDLCudaContext::benchmark(unsigned long long *pointsPerSecond)
 {
     unsigned int t0 = 0;
     unsigned int t1 = 0;
-    unsigned int count = 10000;
+    unsigned int count = 25000;
     bool success = true;
     float seconds = 0; 
     t0 = util::getSystemTime();

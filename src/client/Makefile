@@ -10,8 +10,9 @@ CXXFLAGS=-O2
 COMPUTE_CAP=30
 NVCC=nvcc
 NVCCFLAGS=-gencode=arch=compute_${COMPUTE_CAP},code=\"sm_${COMPUTE_CAP}\" -Xcompiler "${CXXFLAGS}"
-CUDA_LIB=/usr/local/cuda/lib64
-CUDA_INCLUDE=/usr/local/cuda/include
+CUDA_HOME=/usr/local/cuda
+CUDA_LIB=${CUDA_HOME}/lib64
+CUDA_INCLUDE=${CUDA_HOME}/include
 
 # ASM variables
 NASM=nasm

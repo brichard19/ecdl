@@ -23,6 +23,7 @@ __shared__ unsigned int _PMINUS2[10];
 __shared__ unsigned int _PBITS;
 __shared__ unsigned int _MBITS;
 
+
 template<int N> __device__ void zero(unsigned int *x)
 {
     #pragma unroll
