@@ -14,6 +14,7 @@ typedef struct {
     int blocks;
     int threads;
     int pointsPerThread;
+    int totalPoints;
 #else
     int threads;
     int pointsPerThread;

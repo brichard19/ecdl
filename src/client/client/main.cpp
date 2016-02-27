@@ -18,6 +18,22 @@
 #include "ECDLCPU.h"
 #endif
 
+
+ECDLContext *getNewContext(const ECDLPParams *params, BigInteger *rx, BigInteger *ry, int numRPoints, void (*callback)(struct CallbackParameters *))
+{
+    ECDLContext *ctx = NULL;
+#ifdef _CUDA
+    ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.totalPoints, _config.pointsPerThread, params, rx, ry, numRPoints, callback);
+#endif
+          
+#ifdef _CPU
+    ctx = new ECDLCpuContext(_config.threads, _config.pointsPerThread, params, rx, ry, numRPoints, callback);
+#endif
+
+    return ctx;
+}
+
+
 ECDLContext *_context;
 
 #define NUM_R_POINTS 32
@@ -39,25 +55,16 @@ ServerConnection *_serverConnection = NULL;
 // Declared extern in client.h
 ClientConfig _config;
 
+// Collection of distinguished points to be sent to the server
 std::vector<DistinguishedPoint> _pointsCache;
 
 bool _running = true;
 
-/**
- * Sends points to server
- */
-void sendPointsToServer()
-{
-    Logger::logInfo("Sending %d points to server", _pointsCache.size());
-    try {
-        _serverConnection->submitPoints(_id, _pointsCache);
-    } catch(std::string err) {
-        printf("Error sending points to server: %s\n", err.c_str());
-        return;
-    }
-    _pointsCache.clear();
-}
+Thread *_ecdlThread = NULL;
 
+/**
+ Verifies a point is on the curve
+ */
 bool verifyPoint(BigInteger &x, BigInteger &y)
 {
     ECCurve curve(_params.p, _params.n, _params.a, _params.b, _params.gx, _params.gy);
@@ -69,19 +76,18 @@ bool verifyPoint(BigInteger &x, BigInteger &y)
 /**
  * Adds distinguished point to cache
  */
-void addPointToCache(BigInteger a, BigInteger b, BigInteger x, BigInteger y)
+void addPointToCache(BigInteger a, BigInteger b, BigInteger x, BigInteger y, unsigned int length)
 {
-    DistinguishedPoint p(a, b, x, y);
+    DistinguishedPoint p(a, b, x, y, length);
     _pointsMutex.grab();
     _pointsCache.push_back(p);
     _pointsMutex.release();
     
 }
 
-void callback(struct CallbackParameters *p)
+void pointFoundCallback(struct CallbackParameters *p)
 {
     // TODO: Should be in new thread so worker thread is not blocked
-
     // Check if point is valid
     if(!verifyPoint(p->x, p->y)) {
         printf("INVALID POINT\n");
@@ -89,10 +95,17 @@ void callback(struct CallbackParameters *p)
         printf("b: %s\n", p->bStart.toString(16).c_str());
         printf("x: %s\n", p->x.toString(16).c_str());
         printf("y: %s\n", p->y.toString(16).c_str());
+        printf("length: %d\n", p->length);
         printf("\n\n" );
         return;
     }
-    addPointToCache(p->aStart, p->bStart, p->x, p->y);
+        printf("a: %s\n", p->aStart.toString(16).c_str());
+        printf("b: %s\n", p->bStart.toString(16).c_str());
+        printf("x: %s\n", p->x.toString(16).c_str());
+        printf("y: %s\n", p->y.toString(16).c_str());
+        printf("length: %d\n", p->length);
+        printf("\n\n" );
+    addPointToCache(p->aStart, p->bStart, p->x, p->y, p->length);
 }
 
 /**
@@ -138,18 +151,30 @@ void *sendPointsThread(void *p)
         _pointsMutex.grab();
 
         if(_pointsCache.size() >= _config.pointCacheSize) {
+            printf("Point cache size: %d\n", _config.pointCacheSize);
+
             Logger::logInfo("Sending %d points to server", _pointsCache.size());
             bool success = true;
 
+            std::vector<DistinguishedPoint> points;
+
+            printf("Copying points\n");
+            //std::copy(_pointsCache.begin(), _pointsCache.begin() + _pointsCache.size(), points.begin());
+            for(int i = 0; i < _pointsCache.size(); i++) {
+                points.push_back(_pointsCache[i]);
+            }
+
             try {
-                _serverConnection->submitPoints(_id, _pointsCache);
+                printf("Sending to server\n");
+                _serverConnection->submitPoints(_id, points);
             } catch(std::string err) {
                 success = false;
                 printf("Error sending points to server: %s. Will try again later\n", err.c_str());
             }
 
             if(success) {
-                _pointsCache.clear();
+                //_pointsCache.clear();
+                _pointsCache.erase(_pointsCache.begin(), _pointsCache.begin() + _config.pointCacheSize);
             }
         }
         _pointsMutex.release();
@@ -188,9 +213,8 @@ void pollConnections()
         try {
             status = _serverConnection->getStatus(_id);
         }catch(std::string s) {
-            printf("Connection error: %s\n", s.c_str());
-            printf("Retrying in 60 seconds...\n");
-            fflush(stdout); 
+            Logger::logInfo("Connection error: %s\n", s.c_str());
+            Logger::logInfo("Retrying in 60 seconds...\n");
             sleep(60);
             continue;
         }
@@ -201,23 +225,17 @@ void pollConnections()
 
                 // Get parameters from the server
                 if(!getParameters(_params, _rx, _ry)) {
-                    printf("Error getting the parameters from server\n");
+                    Logger::logError("Error getting the parameters from server\n");
                 } else {
+                    Logger::logInfo("Received parameters from server\n");
+                    Logger::logInfo("GF(p) = %s\n", _params.p.toString().c_str());
+                    Logger::logInfo("y^2 = x^3 + %sx + %s\n", _params.a.toString().c_str(), _params.b.toString().c_str());
+                    Logger::logInfo("n = %s\n", _params.n.toString().c_str());
+                    Logger::logInfo("G = [%s, %s]\n", _params.gx.toString().c_str(), _params.gy.toString().c_str());
+                    Logger::logInfo("Q = [%s, %s]\n", _params.qx.toString().c_str(), _params.qy.toString().c_str());
+                    Logger::logInfo("%d distinguished bits\n", _params.dBits);
 
-                    printf("Received parameters from server\n");
-                    printf("GF(p) = %s\n", _params.p.toString().c_str());
-                    printf("y^2 = x^3 + %sx + %s\n", _params.a.toString().c_str(), _params.b.toString().c_str());
-                    printf("G = [%s, %s]\n", _params.gx.toString().c_str(), _params.gy.toString().c_str());
-                    printf("Q = [%s, %s]\n", _params.qx.toString().c_str(), _params.qy.toString().c_str());
-
-                    #ifdef _CUDA
-                    _context = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.pointsPerThread, &_params, _rx, _ry, NUM_R_POINTS, callback);
-                    #endif
-                    
-                    #ifdef _CPU
-                    _context = new ECDLCpuContext(_config.threads, _config.pointsPerThread, &_params, _rx, _ry, NUM_R_POINTS, callback);
-                    #endif
-
+                    _context = getNewContext(&_params, _rx, _ry, NUM_R_POINTS, pointFoundCallback);
                     _context->init();
 
                     Thread t(runningThread, NULL);
@@ -237,6 +255,36 @@ void pollConnections()
     }
 }
 
+#ifdef _CUDA
+bool cudaInit()
+{
+    CUDA::DeviceInfo devInfo;
+
+    if(CUDA::getDeviceCount() == 0) {
+        Logger::logError("No CUDA devices detected\n");
+        return false;
+    }
+
+    // Get device info
+    try {
+        CUDA::getDeviceInfo(_config.device, devInfo);
+    }catch(cudaError_t cudaError) {
+        Logger::logError("Error getting info for device %d: %s\n", _config.device, cudaGetErrorString(cudaError));
+        return false;
+    }
+  
+    Logger::logInfo("Device info:");
+    Logger::logInfo("Name:     %s", devInfo.name.c_str());
+    Logger::logInfo("version:  %d.%d", devInfo.major, devInfo.minor);
+    Logger::logInfo("MP count: %d", devInfo.mpCount);
+    Logger::logInfo("Cores:    %d", devInfo.mpCount * devInfo.cores);
+    Logger::logInfo("Memory:   %lldMB", devInfo.globalMemory/(2<<19));
+    Logger::logInfo("");
+
+    return true;
+}
+#endif
+
 /**
  * Program entry point
  */
@@ -255,29 +303,10 @@ int main(int argc, char **argv)
 
     // Check for CUDA devices
 #ifdef _CUDA
-    CUDA::DeviceInfo devInfo;
-    cudaError_t cudaError = cudaSuccess;
-
-    if(CUDA::getDeviceCount() == 0) {
-        Logger::logError("No CUDA devices detected\n");
+    if (!cudaInit())
+    {
         return 1;
     }
-
-    // Get device info
-    try {
-        CUDA::getDeviceInfo(_config.device, devInfo);
-    }catch(cudaError_t cudaError) {
-        Logger::logError("Error getting info for device %d: %s\n", _config.device, cudaGetErrorString(cudaError));
-        return 1;
-    }
-  
-    Logger::logInfo("Device info:");
-    Logger::logInfo("Name:     %s", devInfo.name.c_str());
-    Logger::logInfo("version:  %d.%d", devInfo.major, devInfo.minor);
-    Logger::logInfo("MP count: %d", devInfo.mpCount);
-    Logger::logInfo("Cores:    %d", devInfo.mpCount * devInfo.cores);
-    Logger::logInfo("Memory:   %lldMB", devInfo.globalMemory/1048576);
-    Logger::logInfo("");
 #endif
     
 //TODO: Properly parse arguments (getopt?)
@@ -295,7 +324,12 @@ int main(int argc, char **argv)
     }
 
     // Enter main loop
-    _serverConnection = new ServerConnection(_config.serverHost, _config.serverPort);
+    try {
+        _serverConnection = new ServerConnection(_config.serverHost, _config.serverPort);
+    }catch(std::string err) {
+        Logger::logError("Error: %s\n", err.c_str());
+    }
+
     pollConnections();
 
     return 0;

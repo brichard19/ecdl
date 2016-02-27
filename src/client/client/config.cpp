@@ -36,6 +36,7 @@ ClientConfig loadConfig(std::string fileName)
     configObj.threads = root.get("cuda_threads", -1).asInt();
     configObj.blocks = root.get("cuda_blocks", -1).asInt();
     configObj.pointsPerThread = root.get("cuda_points_per_thread", -1).asInt();
+    configObj.totalPoints = root.get("cuda_points", -1).asInt();
     configObj.device = root.get("cuda_device", -1).asInt();
     configObj.pointCacheSize = root.get("point_cache_size", 4).asInt();
 #else

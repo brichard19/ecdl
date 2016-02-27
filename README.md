@@ -195,3 +195,14 @@ For example, to solve the discrete logarithm on a curve with an order of `~2^80`
 
 If using a 24-bit distinguisher, then you will need to find about `2^16` distinguished points. On 128 processors where each processor can do 1 million point additions per second, the running time would be approximately `(2^40 / 128 + 2.5 * 2^24)0.000001` = 2.3 hours.
 
+
+### CPU vs GPU
+
+A CPU is made of a few very fast cores. A GPU is made of hundreds of slow cores.
+
+The parallel rho attack works by iterating a random walk until a distinguished point is found.
+
+CPUs can run a few very fast walks in parallel, (millions of iterations per second).
+
+GPUs can run hundreds of walks in parallel, but only a few thousand iterations per second. 
+

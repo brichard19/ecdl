@@ -57,6 +57,8 @@ class ECDLPContext:
         self.curve = None
         self.params = None
         self.status = "running"
+        self.email = None
+        self.collisions = 0
 
     def getConnection(self):
         return database.getConnection(self.name)
@@ -93,14 +95,14 @@ def generateRPoints(params):
 '''
  Creates a new context
 '''
-def createContext(params, name):
+def createContext(params, name, email):
   
     ctx = ECDLPContext(name)
 
     ctx.params = params
     ctx.rPoints = generateRPoints(ctx.params)
 
-    Database.createContext(ctx.name, ctx.params, ctx.rPoints)
+    Database.createContext(ctx.name, ctx.email, ctx.params, ctx.rPoints)
 
     ctx.curve = ECCurve(ctx.params.a, ctx.params.b, ctx.params.p, ctx.params.n, ctx.params.gx, ctx.params.gy)
     ctx.pointG = ECPoint(ctx.params.gx, ctx.params.gy)
@@ -114,7 +116,6 @@ def createContext(params, name):
  Loads an existing context
 '''
 def loadContext(name):
-
     ctx = ECDLPContext(name)
 
     ctx.database = Database.getConnection(ctx.name)
@@ -122,6 +123,9 @@ def loadContext(name):
     ctx.database.open()
     ctx.rPoints = ctx.database.getRPoints()
     ctx.params = ctx.database.getParams()
+    ctx.status = ctx.database.getStatus()
+    ctx.solution = ctx.database.getSolution()
+    ctx.collisions = ctx.database.getNumCollisions()
     ctx.database.close()
 
     ctx.curve = ECCurve(ctx.params.a, ctx.params.b, ctx.params.p, ctx.params.n, ctx.params.gx, ctx.params.gy)

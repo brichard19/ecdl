@@ -7,76 +7,43 @@
 
 #include "ECDLContext.h"
 
-/**
- Elliptic curve discrete logarithm parameters
- */
-typedef struct {
-    BigInteger p;
-    BigInteger a;
-    BigInteger b;
-    BigInteger n;
-    BigInteger gx;
-    BigInteger gy;
-    BigInteger qx;
-    BigInteger qy;
-    unsigned int dBits;
-}ECDLPParams;
+#include <vector>
 
-/**
- Parameters passed to the callback when a distinguished point is found
- */
-struct CallbackParameters {
-    BigInteger aStart;
-    BigInteger bStart;
-    BigInteger x;
-    BigInteger y;
-};
+class ECDLCpuContext;
+class RhoBase;
 
 typedef struct {
-    volatile bool *running;
-    unsigned int threadId;
+    ECDLCpuContext *context;
+    int threadId;
 }WorkerThreadParams;
 
 typedef struct {
-    unsigned int threadId;
-    unsigned int iterations;
-    unsigned int t;
+    ECDLCpuContext *instance;
+    int threadId;
 }BenchmarkThreadParams;
 
-void initThreadGlobals(ECDLPParams *params,
-                        BigInteger *rx,
-                        BigInteger *ry,
-                        int numRPoints,
-                        BigInteger *a,
-                        BigInteger *b,
-                        BigInteger *x,
-                        BigInteger *y,
-                        int numThreads,
-                        int numPoints,
-                        int dBits,
-                        void (*callback)(struct CallbackParameters *)
-                        );
-
-
-void cleanupThreadGlobals();
-void *workerThreadFunction(void *p);
-void *benchmarkThreadFunction(void *p);
 
 
 class ECDLCpuContext : public ECDLContext {
 
 private:
+        // Problem parameters
+    ECDLPParams _params;
+    ECCurve _curve;
+
     // Number of threads
     int _numThreads;
 
     // Thread handles
-    Thread *_threads;
+    std::vector<Thread> _threads;
 
-    // Parameters for each thread
-    WorkerThreadParams *_threadParams;
+    std::vector<WorkerThreadParams> _threadParams;
+
+    // Workers for each thread
+    std::vector<RhoBase *> _workers;
 
     // Flag to indicate if the threads are running
-    bool _running;
+    volatile bool _running;
 
     // Callback that gets called when distinguished point is found 
     void (*_callback)(struct CallbackParameters *);
@@ -86,24 +53,15 @@ private:
 
     // R-points
     int _rPoints;
-    BigInteger _rx[ 32 ];
-    BigInteger _ry[ 32 ];
+    BigInteger _rx[ NUM_R_POINTS ];
+    BigInteger _ry[ NUM_R_POINTS ];
 
-    // Problem parameters
-    ECDLPParams _params;
-    ECCurve _curve;
+    static void *workerThreadEntry(void *ptr);
 
-    // multipliers for the starting points aG + bQ
-    BigInteger *_aStart;
-    BigInteger *_bStart;
+    void workerThreadFunction(int threadId);
 
-    // X and Y values for the starting points
-    BigInteger *_x;
-    BigInteger *_y;
+    RhoBase *getRho();
 
-    BigInteger _p;
-
-    void generateStartingPoints();
 public:
 
     virtual bool init();
@@ -112,17 +70,17 @@ public:
     virtual bool isRunning();
 
     ECDLCpuContext(
-                       unsigned int threads,
-                       unsigned int pointsPerThread,
-                       ECDLPParams *params,
-                       BigInteger *rx,
-                       BigInteger *ry,
-                       int rPoints,
-                       void (*callback)(struct CallbackParameters *)
-                      );
+                   unsigned int threads,
+                   unsigned int pointsPerThread,
+                   const ECDLPParams *params,
+                   BigInteger *rx,
+                   BigInteger *ry,
+                   int rPoints,
+                   void (*callback)(struct CallbackParameters *)
+                  );
 
     virtual bool benchmark(unsigned long long *pointsPerSecond);
-    ~ECDLCpuContext();
+    virtual ~ECDLCpuContext();
 };
 
 #endif

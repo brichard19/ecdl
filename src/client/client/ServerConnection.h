@@ -4,6 +4,8 @@
 #include <string>
 #include "BigInteger.h"
 
+#define DEFAULT_PORT 9999
+
 enum {
     SERVER_STATUS_RUNNING,
     SERVER_STATUS_STOPPED
@@ -28,36 +30,41 @@ public:
     BigInteger ry[32];
 };
 
+/**
+ * Represents a distinguished point
+ */
 class DistinguishedPoint {
 
 public:
-    DistinguishedPoint(BigInteger &a, BigInteger &b, BigInteger &x, BigInteger &y)
+    DistinguishedPoint(BigInteger &a, BigInteger &b, BigInteger &x, BigInteger &y, unsigned int length)
     {
         this->a = a;
         this->b = b;
         this->x = x;
         this->y = y;
+        this->length = length;
     }
 
     BigInteger a;
     BigInteger b;
     BigInteger x;
     BigInteger y;
+    unsigned int length;
 };
 
 /**
- * Stores all the values that the client sends to the server when it
- * finds a distinguished point
+ * Represents a connection the server
  */
-
 class ServerConnection {
 
 private:
     unsigned short _port;
     std::string _host;
     std::string _url;
+
 public:
-    ServerConnection(std::string, unsigned short port);
+    ServerConnection(std::string host, unsigned short port=DEFAULT_PORT);
+
     int getStatus(std::string id);
     ParamsMsg getParameters(std::string id);
     void submitPoints(std::string id, std::vector<DistinguishedPoint> &points);

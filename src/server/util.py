@@ -8,6 +8,9 @@ Converts a string to integer by guessing the base
 def parseInt(n):
     return int(n, 0)
 
+def toHex(n):
+    return hex(n).rstrip("L").lstrip("0x") or "0"
+
 '''
 Generates the R points for the random walk from the ECDLP parameters
 '''
@@ -87,3 +90,112 @@ class ECDLPParams:
         encoded['bits'] = self.dBits
 
         return encoded
+
+'''
+Compresses an elliptic curve point
+'''
+def compress_point(x, y):
+    even = True
+
+    if y & 0x01 == 0x01:
+        even = False
+
+    if even:
+        return "02" + toHex(x)
+    else:
+        return "03" + toHex(x)
+
+
+'''
+Decompresses a compressed point
+'''
+def decompress_point(compressed, a, b, p):
+
+    print "Decompressing " + compressed
+
+    # Get the even/odd of the y coordinate
+    sign = compressed[:2]
+
+    # Extract x coordinate
+    x = int(compressed[2:], 16)
+
+    # compute the solutions of y to y^2 = x^3 + ax + b
+    z = ((x*x*x) + a * x + b) % p
+    print "Computing square root of " + hex(z)
+    y = squareRootModP(z, p)
+
+    #y1 is even, y2 is odd
+    y1 = y[0]
+    y2 = y[1]
+
+    if y1 & 0x01 == 0x01:
+        tmp = y1
+        y1 = y2
+        y2 = tmp
+
+    # Return the x,y pair
+    if sign == "02":
+        return x, y1
+    else:
+        return x, y2
+
+
+def legendre_symbol(a,p):
+    ls = pow(a, (p-1)//2, p)
+
+    if(ls == p - 1):
+        return -1
+    return ls
+
+def squareRootModP(n,p):
+
+    if(n == 0):
+        return [0]
+
+    if(p == 2):
+        return [n]
+
+    if(legendre_symbol(n,p) != 1):
+        return []
+
+    # Check for easy case
+    if(n % 4 == 3):
+        r = pow(n, (p+1)/4, p)
+        return [r, p - r]
+
+    # Factor out powers of 2 from p - 1
+    q = p - 1
+    s = 0
+
+    while(q % 2 == 0):
+        s = s + 1
+        q = q // 2
+
+    # Select z which is a quadratic non-residue mod p
+    z = 2
+    while(legendre_symbol(z,p) != -1):
+        z = z + 1
+
+    c = pow(z, q, p)
+
+    r = pow(n, (q+1)//2, p)
+    t = pow(n, q, p)
+    m = s
+
+    while(t != 1):
+
+        # Find lowest i where t^(2^i) = 1
+        i = 1
+        e = 0
+        for e in range(1,m):
+            if(pow(t, pow(2,i), p) == 1):
+                break
+            i = i * 2
+        
+        b = pow(c, 2**(m - i - 1), p)
+        r = (r * b) % p
+        t = (t * b * b) % p
+        c = (b * b) % p
+        m = i
+
+    return [r, p - r]

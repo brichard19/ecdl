@@ -1,12 +1,13 @@
 import json
+import ecc
 from ecc import ECCurve, ECPoint
 import os
 import random
 import sys
 import ecdl
+import util
 from util import ECDLPParams
 
-from MySQLPointDatabase import MySQLPointDatabase
 from pprint import pprint
 from flask import Flask, jsonify, request
 from flask_jsonschema import JsonSchema, ValidationError
@@ -18,7 +19,6 @@ app.config['PROPAGATE_EXCEPTIONS'] = True
 jsonschema = JsonSchema(app)
 
 NUM_R_POINTS = 32
-WORKDIR = './work'
 
 # Global dictionary of contexts
 _ctx = {}
@@ -33,7 +33,9 @@ def getContext(id):
 
     return None
 
-
+'''
+Loads all the contexts into the _ctx dictionary
+'''
 def loadAllContexts():
     names = ecdl.Database.getNames()
 
@@ -41,7 +43,7 @@ def loadAllContexts():
         return
 
     for n in names:
-        print("Reading Context" + n)
+        print("Loading context '" + n + "'")
         ctx = ecdl.loadContext(n)
         _ctx[ctx.name] = ctx
 
@@ -51,6 +53,12 @@ Converts a string to integer by guessing the base
 '''
 def parseInt(n):
     return int(n, 0)
+
+'''
+Converts integer to string
+'''
+def intToString(n):
+    return str(n).rstrip("L")
 
 '''
 Encodes ECDLP parameters as json
@@ -73,22 +81,29 @@ def encodeContextParams(ctx):
     return content
 
 '''
-Returns the status to the client
+Route for /status/<id>
+
+Gets the status of a job
 '''
 @app.route("/status/<id>", methods=['GET'])
 def status(id):
+
+    # Get the context
     ctx = getContext(id)
     if ctx == None:
         return "", 404
 
+    # Get the status
     response = {}
     response['status'] = ctx.status;
 
+    # Return the status
     return jsonify(response)
 
 '''
-Create a new ECDL problem. Sets up database etc so points
-can be submitted
+Route for /create/<id>
+
+Create a news job with the specified id
 '''
 @app.route("/create/<id>", methods=['POST'])
 def create(id):
@@ -97,52 +112,73 @@ def create(id):
     if getContext(id) != None:
         return "", 500
 
-    print("Creating new context: " + id)
-    print(request.json)
-
     content = request.json
 
+    # Decode parameters
     params = ECDLPParams()
     params.decode(content['params'])
 
-    print("Creating context")
-    ctx = ecdl.createContext(params, id)
+    if content.has_key('email'):
+        email = content['email']
+    else:
+        email = ''
 
+    #Verify parameters are correct
+    if not ecc.verifyCurveParameters(params.a, params.b, params.p, params.n, params.gx, params.gy):
+        return "Invalid ECC parameters", 400
+
+    # Create the context
+    ctx = ecdl.createContext(params, id, email)
+
+    # Add context to list
     _ctx[ctx.name] = ctx
 
     return ""
 
 '''
-Returns the problem parameters to the client
+Route for /params/<id>
+
+Gets the parameters for a job
 '''
 @app.route("/params/<id>", methods=['GET'])
 def get_params(id):
-    print("ID: " + id)
+
+    # Get the context
     ctx = getContext(id)
 
     if ctx == None:
         return "", 404
 
+    # Get the parameters
     content = encodeContextParams(ctx)
 
+    # Return parameters
     return json.dumps(content)
 
+'''
+Route for /submit/<id>
 
+This route is for submitting distinguished points to the server
+'''
 @app.route("/submit/<id>", methods=['POST'])
-#@jsonschema.validate('schemas', 'submit')
 def submit_points(id):
+
+    # Get the context
     ctx = getContext(id)
 
     if ctx == None:
-        print("Count not find context " +id)
+        print("Count not find context " + id)
         return "", 404
 
+    # Check if the job is still running
     if ctx.status == "stopped":
         return "", 500
 
     content = request.json
 
     modulus = pow(2, ctx.params.dBits)
+
+    points = []
 
     # Verify all points
     for i in range(len(content)):
@@ -151,18 +187,29 @@ def submit_points(id):
         b = parseInt(content[i]['b'])
         x = parseInt(content[i]['x'])
         y = parseInt(content[i]['y'])
+        length = content[i]['length']
 
-        if a >= ctx.curve.n or b >= ctx.curve.n:
+        # Verify the exponents are within range
+        if a <= 0 or a >= ctx.curve.n or b <= 0 or b >= ctx.curve.n:
             print("Invalid exponents:")
             print(str(a))
             print(str(b))
             return "", 400
 
-        # Check that the x value has 0 bits on the end
+        # Verify point is valid
+        if x < 0 or x >= ctx.curve.p or y < 0 or y >= ctx.curve.p:
+            print("Invalid point:")
+            print("X: " + str(x))
+            print("y: " + str(y))
+            return "", 400
+
+        # Check that the x value has the correct number of 0 bits
         if x % modulus != 0:
+            print("[" + hex(x) + "," + hex(y) +"]")
             print("Not distinguished point! Rejecting!")
             return "", 400
 
+        # Verify aG = bQ = (x,y)
         endPoint = ECPoint(x, y)
         if verifyPoint(ctx.curve, ctx.pointG, ctx.pointQ, a, b, endPoint) == False:
             print("Invalid point!")
@@ -170,35 +217,38 @@ def submit_points(id):
             print("")
             return "", 400
 
-    foundCollision = False
+        # Append to list
+        dp = {}
+        dp['a'] = a
+        dp['b'] = b
+        dp['x'] = x
+        dp['y'] = y
+        dp['length'] = length
+        points.append(dp)
 
+    # Connect to database
     ctx.database.open()
 
-    # Write points to database
-    for i in range(len(content)):
-        a = parseInt(content[i]['a'])
-        b = parseInt(content[i]['b'])
-        x = parseInt(content[i]['x'])
-        y = parseInt(content[i]['y'])
+    # Write list to database
+    collisions = ctx.database.insertMultiple(points)
 
-        #Check for collision
-        dp = ctx.database.get(x, y)
-        if dp != None:
-            if dp['a'] != a or dp['b'] != b:
-                print("==== FOUND COLLISION ====")
-                print("a1: " + hex(a))
-                print("b1: " + hex(b))
-                print("")
-                print("a2: " + hex(dp['a']))
-                print("b2: " + hex(dp['b']))
-                print("")
-                print("x: " + hex(x))
-                print("y: " + hex(y))
-                foundCollision = True
-            else:
-                print("Point already exists in database. Rejecting.")
-        else:
-            ctx.database.insert(a, b, x, y)
+    # If there are any collisions, add them to the collisions table
+    if collisions != None:
+        for c in collisions:
+            dp = ctx.database.get(c['x'], c['y'])
+            print("==== FOUND COLLISION ====")
+            print("a1:     " + hex(c['a']))
+            print("b1:     " + hex(c['b']))
+            print("length: " + intToString(c['length']))
+            print("")
+            print("a2:     " + hex(dp['a']))
+            print("b2:     " + hex(dp['b']))
+            print("length: " + intToString(dp['length']))
+            print("")
+            print("x:      " + hex(c['x']))
+            print("y:      " + hex(c['y']))
+
+            ctx.database.insertCollision(c['a'], c['b'], c['length'], dp['a'], dp['b'], dp['length'], c['x'], c['y'])
 
     ctx.database.close()
 
@@ -224,8 +274,8 @@ def main():
 
     try:
         ecdl.loadConfig("config/config.json")
-    except:
-        print("Error opening config: " + sys.exc_info[0])
+    except Exception as e:
+        print("Error opening config file " + str(e))
         sys.exit(1)
 
     loadAllContexts()

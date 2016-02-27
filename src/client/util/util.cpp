@@ -2,11 +2,12 @@
 #ifdef _WIN32
     #include<windows.h>
 #else
+    #include<unistd.h>
+    #include<sys/stat.h>
     #include<sys/time.h>
 #endif
 
 namespace util {
-
 
 unsigned int getSystemTime()
 {
@@ -17,39 +18,6 @@ unsigned int getSystemTime()
     gettimeofday( &t, NULL );
     return t.tv_sec * 1000 + t.tv_usec / 1000;
 #endif
-}
-
-BigInteger toMontgomery(BigInteger x, BigInteger p)
-{
-    int rBits = p.getBitLength();
-    BigInteger two(2);
-    BigInteger r = two.pow(rBits);
-     
-    return (x * r) % p;
-}
-
-BigInteger toMontgomery(BigInteger x, BigInteger r, BigInteger p)
-{
-    return (x * r) % p;
-}
-
-/**
- * Converts a number from montgomery form
- */
-BigInteger fromMontgomery(BigInteger x, BigInteger p)
-{
-    int rBits = p.getBitLength();
-    BigInteger two(2);
-    BigInteger r = two.pow(rBits);
-
-    BigInteger rInverse = r.invm(p);
-
-    return (x * rInverse) % p;
-}
-
-BigInteger fromMontgomery(BigInteger n, BigInteger rInv, BigInteger p)
-{
-    return (n * rInv) % p;
 }
 
 std::string hexEncode(const unsigned char *bytes, unsigned int len)
@@ -93,5 +61,13 @@ void printHex(unsigned long *x, int len)
         printf("%.*lx", (int)sizeof(unsigned long)*2, x[i]);
     }
 }
+
+void getRandomBytes(unsigned char *buf, unsigned int count)
+{
+    for(unsigned int i = 0; i < count; i++) {
+        buf[i] = (unsigned char)rand();
+    }
+}
+
 
 }

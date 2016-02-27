@@ -17,8 +17,8 @@ void generateRPoints(ECCurve curve, ECPoint q, BigInteger *aAra, BigInteger *bAr
         ECPoint r3;
 
         // Generate random multiplies
-        BigInteger a = randomBigInteger(order);
-        BigInteger b = randomBigInteger(order);
+        BigInteger a = randomBigInteger(BigInteger(2), order);
+        BigInteger b = randomBigInteger(BigInteger(2), order);
 
         // Multiply G and Q
         r1 = curve.multiplyPoint(a, g);

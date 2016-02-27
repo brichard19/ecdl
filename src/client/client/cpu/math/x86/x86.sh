@@ -25,4 +25,9 @@ do
         echo "Error"
         exit
     fi
+    python gen.py mul2n $bits >> x86.asm
+    if [ $? -ne 0 ]; then
+        echo "Error"
+        exit
+    fi
 done

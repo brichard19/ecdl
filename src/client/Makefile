@@ -4,13 +4,13 @@ LIBS+=-L$(LIBDIR)
 
 # C++ options
 CXX=g++
-CXXFLAGS=-O2
+CXXFLAGS=-Wall
 
 # CUDA variables
 COMPUTE_CAP=30
-NVCC=nvcc
-NVCCFLAGS=-gencode=arch=compute_${COMPUTE_CAP},code=\"sm_${COMPUTE_CAP}\" -Xcompiler "${CXXFLAGS}"
-CUDA_HOME=/usr/local/cuda
+NVCC=nvcc -O3
+NVCCFLAGS=-v -gencode=arch=compute_${COMPUTE_CAP},code=\"sm_${COMPUTE_CAP}\" -Xptxas="-v" -Xcompiler "${CXXFLAGS}"
+CUDA_HOME=/usr/local/cuda-7.5
 CUDA_LIB=${CUDA_HOME}/lib64
 CUDA_INCLUDE=${CUDA_HOME}/include
 

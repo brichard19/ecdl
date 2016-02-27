@@ -1,6 +1,6 @@
 {
     "port":9999,
-    "dbUser":"user",
+    "dbUser":"root",
     "dbPassword":"password",
     "dbHost":"127.0.0.1"
 }

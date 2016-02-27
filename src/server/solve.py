@@ -5,7 +5,6 @@ import ecdl
 import sys
 
 NUM_R_POINTS = 32
-WORKDIR = './work'
 
 def getContext(id):
     if id in _ctx:
@@ -31,8 +30,8 @@ def verifyPoint(curve, g, q, endA, endB, endPoint):
     return True
 
 '''
-Verifies that one random walk does not walk into the
-start of the other one.
+Checks if the end point in the first random walk is the
+start point of the second walk
 
 Robin Hood is a reference to character in English
 folklore hero who could shoot a second arrow on the
@@ -89,6 +88,9 @@ def getLength(curve, startA, startB, startPoint, endPoint, rPoints, dBits):
 
     return length
 
+'''
+Inversion mod p using Fermat method
+'''
 def invm(x, m):
     y = x % m
     return pow(y, m-2, m)
@@ -121,14 +123,14 @@ def findCollision(curve, g, q, a1Start, b1Start, p1Start, a2Start, b2Start, p2St
     a2 = a2Start
     b2 = b2Start
 
-    print("Counting walk 1 length")
+    print("Counting walk #1 length")
     p1Len = getLength(curve, a1, b1, p1Start, endPoint, rPoints, dBits)
 
     if p1Len < 0:
         return None, None, None, None, None, None
     print(str(p1Len))
 
-    print("Counting walk 2 length")
+    print("Counting walk #2 length")
     p2Len = getLength(curve, a2, b2, p2Start, endPoint, rPoints, dBits)
    
     if p2Len < 0:
@@ -195,8 +197,8 @@ def main():
     b1 = parseInt(sys.argv[2])
     a2 = parseInt(sys.argv[3])
     b2 = parseInt(sys.argv[4])
-    x = parseInt(sys.argv[5])
-    y = parseInt(sys.argv[6])
+    endX = parseInt(sys.argv[5])
+    endY = parseInt(sys.argv[6])
 
     name = sys.argv[7]
    
@@ -211,19 +213,23 @@ def main():
     rPoints = ctx.rPoints
     dBits = ctx.params.dBits
 
+    # Get G and Q
     g = ECPoint(ctx.params.gx, ctx.params.gy)
     q = ECPoint(ctx.params.qx, ctx.params.qy)
 
-    endPoint = ECPoint(x, y)
+    endPoint = ECPoint(endX, endY)
 
+    # Calculate starting points
     p1Start = curve.add(curve.multiply(a1, g), curve.multiply(b1, q))
     p2Start = curve.add(curve.multiply(a2, g), curve.multiply(b2, q))
+
 
     a1, b1, point1, a2, b2, point2 = findCollision(curve, g, q, a1, b1, p1Start, a2, b2, p2Start, endPoint, rPoints, dBits)
 
     if a1 == None:
         return
 
+    # Compute private key
     k = (((a1 - a2)%curve.n) * invm(b2 - b1, curve.n)) % curve.n
     r = curve.multiply(k, g)
     print("Q=   " + hex(q.x) + " " + hex(q.y))

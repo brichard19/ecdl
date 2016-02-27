@@ -2,10 +2,11 @@
 #include "logger.h"
 #include "util.h"
 #include "logger.h"
+#include "RhoCPU.h"
 
 ECDLCpuContext::ECDLCpuContext( unsigned int numThreads,
                                 unsigned int pointsPerThread,
-                                ECDLPParams *params,
+                                const ECDLPParams *params,
                                 BigInteger *rx,
                                 BigInteger *ry,
                                 int rPoints,
@@ -17,7 +18,6 @@ ECDLCpuContext::ECDLCpuContext( unsigned int numThreads,
     _callback = callback;
     _params = *params;
     _rPoints = rPoints;
-    _p = params->p;
     _running = false;
  
     // Copy random walk points
@@ -28,32 +28,49 @@ ECDLCpuContext::ECDLCpuContext( unsigned int numThreads,
 
     // Set up curve using parameters 
     _curve = ECCurve(_params.p, _params.n, _params.a, _params.b, _params.gx, _params.gy);
+}
 
-    // Allocate room for points
-    _x = new BigInteger[_pointsPerThread * _numThreads];
-    _y = new BigInteger[_pointsPerThread * _numThreads];
+RhoBase *ECDLCpuContext::getRho()
+{
+    int pLen = _params.p.getWordLength();
+    //int pLen = _params.p.getByteLength();
 
-    // Allocate memory for multipliers for starting points
-    _aStart = new BigInteger[_pointsPerThread * _numThreads];
-    _bStart = new BigInteger[_pointsPerThread * _numThreads];
+    switch(pLen) {
+        case 1:
+            return new RhoCPU<1>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 2:
+            return new RhoCPU<2>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 3:
+            return new RhoCPU<3>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 4:
+            return new RhoCPU<4>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 5:
+            return new RhoCPU<5>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 6:
+            return new RhoCPU<6>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 7:
+            return new RhoCPU<7>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        case 8:
+            return new RhoCPU<8>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
+        default:
+            throw "COMPILE WITH LARGER INTEGER SUPPORT";
+    }
 }
 
 ECDLCpuContext::~ECDLCpuContext()
 {
-    delete[] _x;
-    delete[] _y;
-    delete[] _aStart;
-    delete[] _bStart;
-
-    cleanupThreadGlobals();
 }
 
 bool ECDLCpuContext::init()
 {
+    for(int i = 0; i < _numThreads; i++) {
+        _workers.push_back(getRho());
+    }
+    /*
     // Generate the starting points
     for(unsigned int i = 0; i < _numThreads * _pointsPerThread; i++) {
-        BigInteger a = randomBigInteger(_params.n);
-        BigInteger b = randomBigInteger(_params.n);
+        BigInteger a = randomBigInteger(2, _params.n);
+        BigInteger b = randomBigInteger(2, _params.n);
 
         ECPoint g = ECPoint(_params.gx, _params.gy);
         ECPoint q = ECPoint(_params.qx, _params.qy);
@@ -71,6 +88,7 @@ bool ECDLCpuContext::init()
 
     initThreadGlobals(&_params, _rx, _ry, 32, _aStart, _bStart, _x, _y, _numThreads, _pointsPerThread, _params.dBits, _callback);
 
+    */
     return true;
 }
 
@@ -79,24 +97,33 @@ bool ECDLCpuContext::stop()
     // TODO: Protect with mutex
     _running = false;
 
+    // Wait for threads to finish
+    for(int i = 0; i < _numThreads; i++) {
+        _threads[i].wait();
+    }
+
+    _threads.clear();
+    _threadParams.clear();
+
     return true;
 }
 
 bool ECDLCpuContext::run()
 {
-    _threads = new Thread[_numThreads];
-    _threadParams = new WorkerThreadParams[_numThreads];
-
+    _running = true;
     // Run the threads
     for(int i = 0; i < _numThreads; i++) {
-        _threadParams[i].threadId = i;
-        _threadParams[i].running = &_running;
+        printf("Starting thread  %d\n", i);
+        WorkerThreadParams params;
 
-        _threads[i] = Thread(workerThreadFunction, &_threadParams[i]);
+        params.threadId = i;
+        params.context = this;
+        _threadParams.push_back(params);
+
+        _threads.push_back(Thread(&ECDLCpuContext::workerThreadEntry, &_threadParams[i]));
     }
 
-    _running = true;
-
+    /*
     // Wait for threads to finish
     for(int i = 0; i < _numThreads; i++) {
         _threads[i].wait();
@@ -105,7 +132,38 @@ bool ECDLCpuContext::run()
     delete[] _threads;
     delete[] _threadParams;
 
+    */
+    for(int i = 0; i < _numThreads; i++) {
+        _threads[i].wait();
+    }
+
     return true;
+}
+
+/**
+ * Entry point method for the thread
+ */
+void *ECDLCpuContext::workerThreadEntry(void *ptr)
+{
+    printf("workerThreadEntry()\n");
+    WorkerThreadParams *params = (WorkerThreadParams *)ptr;
+
+    ((ECDLCpuContext *)params->context)->workerThreadFunction(params->threadId);
+
+    return NULL;
+}
+
+/**
+ * The method where all the work is done for the thread
+ */
+void ECDLCpuContext::workerThreadFunction(int threadId)
+{
+    printf("Worker thread function()\n");
+    RhoBase *r = _workers[threadId];
+
+    while(_running) {
+        r->doStep();
+    }
 }
 
 bool ECDLCpuContext::isRunning()
@@ -115,25 +173,29 @@ bool ECDLCpuContext::isRunning()
 
 bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
 {
+    /*
     int numThreads = _numThreads;
     int pointsPerThread = _pointsPerThread;
-    int iterations = 100000;
+    int iterations = 1000000;
 
     BenchmarkThreadParams *params = new BenchmarkThreadParams[numThreads];
     Thread *threads = new Thread[numThreads];
 
+    // Start threads
     for(int i = 0; i < numThreads; i++) {
         params[i].threadId = i;
         params[i].iterations = iterations;
         threads[i] = Thread(benchmarkThreadFunction, &params[i]);
     }
 
+    // Wait for all threads to finish
     for(int i = 0; i < numThreads; i++) {
         threads[i].wait();
     }
 
     unsigned long long iterationsPerSecond = 0;
     unsigned long long pointsPerSecond = 0;
+    
     for(int i = 0; i < numThreads; i++) {
         float seconds = (float)(params[i].t)/1000;
         unsigned long long threadIterations = (unsigned long long)((float)iterations / seconds);
@@ -152,6 +214,9 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
 
     delete[] threads;
     delete[] params;
+
+    return true;
+    */
 
     return true;
 }

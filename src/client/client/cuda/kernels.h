@@ -32,7 +32,8 @@ cudaError_t multiplyAddG( int blocks,
                           unsigned int *diffBuf,
                           unsigned int *chainBuf,
                           int step,
-                          int count );
+                          unsigned int totalPoints,
+                          unsigned int pointsInParallel );
 
 cudaError_t resetPoints( int blocks,
                          int threads,
@@ -47,10 +48,13 @@ cudaError_t doStep( int blocks,
                     unsigned int *diffBuf,
                     unsigned int *chainBuf,
                     unsigned int *pointFound,
-                    unsigned int *pointThreadId,
                     unsigned int *blockFlags,
                     unsigned int *flags,
-                    unsigned int count );
+                    unsigned int totalPoints,
+                    unsigned int pointsInParallel );
 
-cudaError_t initDeviceParams(const unsigned int *p, unsigned int pBits, const unsigned int *m, unsigned int mBits, const unsigned int *pMinus2, const unsigned int *pTimes2, const unsigned int *pTimes3, unsigned int dBits);
+cudaError_t initDeviceParams(const unsigned int *p, unsigned int pBits, const unsigned int *m, unsigned int mBits, unsigned int dBits);
+
+cudaError_t initDeviceConstants(unsigned int numPoints);
+
 #endif

@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "BigInteger.h"
+#include "util.h"
 
 #ifdef _WIN32
 #include "mpirxx.h"
@@ -7,14 +8,12 @@
 #include "gmpxx.h"
 #endif
 
-#define BYTE_ORDER_MSB 1
-#define BYTE_ORDER_LSB -1
-
-#define ENDIAN_BIG 1
-#define ENDIAN_LITTLE -1
-#define ENDIAN_NATIVE 0
-
 BigInteger::BigInteger()
+{
+    mpz_set_si(e.get_mpz_t(), 0);
+}
+
+BigInteger::~BigInteger()
 {
 }
 
@@ -27,7 +26,9 @@ BigInteger::BigInteger(std::string s, int base)
 {
     // Try to detect the base
     if(base == 0) {
-        if(s[0] == '0' && s[1] == 'x') {
+
+        // Check for hex
+        if(s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
             base = 16;
             s = s.substr(2);
         } else {
@@ -39,6 +40,7 @@ BigInteger::BigInteger(std::string s, int base)
                 }
             }
         }
+
         if(base == 0) {
             base = 10;
         }
@@ -57,17 +59,17 @@ BigInteger::BigInteger(const BigInteger &i)
 BigInteger::BigInteger(const unsigned char *bytes, size_t len)
 {
     // Import the bytes interprated as an integer with least significant bytes first
-    mpz_import(this->e.get_mpz_t(), len, BYTE_ORDER_LSB, 1, ENDIAN_NATIVE, 0, bytes);
+    mpz_import(this->e.get_mpz_t(), len, GMP_BYTE_ORDER_LSB, 1, GMP_ENDIAN_NATIVE, 0, bytes);
 }
 
 BigInteger::BigInteger(const unsigned long *words, size_t len)
 {
-    mpz_import(this->e.get_mpz_t(), len, BYTE_ORDER_LSB, sizeof(unsigned long), ENDIAN_NATIVE, 0, words);
+    mpz_import(this->e.get_mpz_t(), len, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_NATIVE, 0, words);
 }
 
 BigInteger::BigInteger(const unsigned int *words, size_t len)
 {
-    mpz_import(this->e.get_mpz_t(), len, BYTE_ORDER_LSB, sizeof(unsigned int), ENDIAN_NATIVE, 0, words);
+    mpz_import(this->e.get_mpz_t(), len, GMP_BYTE_ORDER_LSB, sizeof(unsigned int), GMP_ENDIAN_NATIVE, 0, words);
 }
 
 BigInteger BigInteger::pow(unsigned int exponent)
@@ -79,7 +81,7 @@ BigInteger BigInteger::pow(unsigned int exponent)
     return product;
 }
 
-BigInteger BigInteger::powm(const BigInteger &exponent, const BigInteger &modulus)
+BigInteger BigInteger::pow(const BigInteger &exponent, const BigInteger &modulus)
 {
     BigInteger product;
 
@@ -88,7 +90,7 @@ BigInteger BigInteger::powm(const BigInteger &exponent, const BigInteger &modulu
     return product;
 }
 
-BigInteger BigInteger::powm(unsigned int exponent, const BigInteger &modulus)
+BigInteger BigInteger::pow(unsigned int exponent, const BigInteger &modulus)
 {
     BigInteger product;
 
@@ -132,6 +134,13 @@ bool BigInteger::isZero()
     }
 }
 
+/*
+BigInteger BigInteger::operator=(const BigInteger &i)
+{
+    this->e = i.e;
+}
+*/
+
 bool BigInteger::operator==(const BigInteger &i) const
 {
     int r = mpz_cmp( this->e.get_mpz_t(), i.e.get_mpz_t() );
@@ -166,7 +175,7 @@ BigInteger BigInteger::operator%(const BigInteger &m)
     return mod;
 }
 
-BigInteger BigInteger::operator-(const BigInteger &a)
+BigInteger BigInteger::operator-(const BigInteger &a) const
 {
     BigInteger diff;
 
@@ -174,7 +183,7 @@ BigInteger BigInteger::operator-(const BigInteger &a)
     return diff;
 }
 
-BigInteger BigInteger::operator+(const BigInteger &a)
+BigInteger BigInteger::operator+(const BigInteger &a) const
 {
     BigInteger sum;
     sum.e = this->e + a.e;
@@ -215,7 +224,7 @@ BigInteger BigInteger::operator/(const BigInteger &i)
     return quotient;
 }
 
-std::string BigInteger::toString(int base)
+std::string BigInteger::toString(int base) const
 {
     char *ptr = mpz_get_str(NULL, base, this->e.get_mpz_t());
     std::string s(ptr);
@@ -264,7 +273,6 @@ size_t BigInteger::getLength32()
 size_t BigInteger::getLength64()
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
-    int wordSize = sizeof(unsigned long)*8;
 
     return (bits + 63) / 64;
 }
@@ -272,25 +280,26 @@ size_t BigInteger::getLength64()
 void BigInteger::getWords(unsigned long *words, size_t size)
 {
     memset( words, 0, size * sizeof(unsigned long) );
-    mpz_export( words, NULL, BYTE_ORDER_LSB, sizeof(unsigned long), ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
+    mpz_export( words, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
+
 
 void BigInteger::getWords(unsigned int *words, size_t size)
 {
     memset( words, 0, size * sizeof(unsigned int) );
-    mpz_export( words, NULL, BYTE_ORDER_LSB, sizeof(unsigned int), ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
+    mpz_export( words, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned int), GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
 void BigInteger::getWords(unsigned int *words)
 {
-    mpz_export( words, NULL, BYTE_ORDER_LSB, sizeof(unsigned int), ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
+    mpz_export( words, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned int), GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
 
 void BigInteger::getBytes(unsigned char *bytes, size_t size)
 {
     memset( bytes, 0, size );
-    mpz_export( bytes, NULL, BYTE_ORDER_LSB, 1, ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
+    mpz_export( bytes, NULL, GMP_BYTE_ORDER_LSB, 1, GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
 bool BigInteger::equals(BigInteger &i)
@@ -304,23 +313,20 @@ bool BigInteger::equals(BigInteger &i)
     }
 }
 
-BigInteger randomBigInteger(BigInteger &max)
+BigInteger randomBigInteger(const BigInteger &min, const BigInteger &max)
 {
-    unsigned char *bytes = NULL;
+    BigInteger range = max - min;
 
-    size_t len = max.getByteLength();
+    unsigned int len = range.getByteLength();
 
-    bytes = new unsigned char[ len ];
+    unsigned char bytes[len];
 
-    // TODO: Use better randomness
-    for( unsigned int i = 0; i < len; i++ ) {
-        bytes[ i ] = rand() & 0xff;
-    }
+    util::getRandomBytes(bytes, len);
 
     BigInteger x( bytes, len );
+     
+    x = x % range;
+    BigInteger value = min + x;
 
-    x = x % max;
-    delete[] bytes;
-
-    return x;
+    return value;
 }

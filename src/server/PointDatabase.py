@@ -1,7 +1,7 @@
 
 class PointDatabase:
 
-    def createContext(self, name, params, rPoints):
+    def createContext(self, name, email, params, rPoints):
         raise NotImplementedError("This should be implemented in subclass")
 
     def getConnection(self, name):
@@ -26,7 +26,18 @@ class PointDatabaseConnection:
     x: 'x' value of the distinguished point
     y: 'y' value of the distinguished point
     '''
-    def insert(self, a, b, x, y):
+    def insert(self, a, b, x, y, length):
+        raise NotImplementedError("This should be implemented in subclass")
+
+    '''
+    Insert an array of distinguished points into the database
+    Each element is a dictionary in the form
+    'a': a value
+    'b': b value
+    'x': distinguished x
+    'y': distinguished y
+    '''
+    def insertMultiple(self, points):
         raise NotImplementedError("This should be implemented in subclass")
 
     '''
@@ -38,7 +49,6 @@ class PointDatabaseConnection:
 
     def getSize():
         raise NotImplementedError("This should be implemented in subclass")
-
 
     def getRPoints(self):
         raise NotImplementedError("This shou,d be implemented in subclass")

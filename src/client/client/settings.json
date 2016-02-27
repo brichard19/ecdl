@@ -2,9 +2,9 @@
     "server_host": "127.0.0.1",
     "server_port": 9999,
 
-    "point_cache_size": 32,
+    "point_cache_size": 1,
     "cpu_threads": 1,
-    "cpu_points_per_thread": 16,
+    "cpu_points_per_thread": 1,
 
 
     "cuda_threads": 32,

@@ -13,6 +13,10 @@
 
 #include "util.h"
 
+static const int bits[] = {
+    64, 96, 128, 160, 192, 224
+};
+
 static const char *_paramStrings[][8] = {
     {
         "10346548290527483921", // p
@@ -114,9 +118,9 @@ void doBenchmark()
         ECCurve curve(params.p, params.n, params.a, params.b, params.gx, params.gy);
         generateRPoints(curve, ECPoint(params.qx, params.qy), NULL, NULL, rx, ry, 32);
 
-        Logger::logInfo("Running benchmark...");
+        Logger::logInfo("Running benchmark for %d-bit prime curve\n", bits[i]);
         #ifdef _CUDA
-        ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
+        ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.totalPoints, _config.pointsPerThread, &params, rx, ry, 32, NULL);
         #else
         ctx = new ECDLCpuContext(_config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
         #endif

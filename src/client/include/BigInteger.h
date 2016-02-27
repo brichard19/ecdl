@@ -29,12 +29,14 @@ public:
     BigInteger( const unsigned char *bytes, size_t len );
     BigInteger( const unsigned long *words, size_t len );
     BigInteger( const unsigned int *words, size_t len);
+    
+    ~BigInteger();
 
-    std::string toString(int base = 10);
+    std::string toString(int base = 10) const;
 
     BigInteger pow( unsigned int exponent );
-    BigInteger powm( const BigInteger &exponent, const BigInteger &modulus );
-    BigInteger powm( unsigned int exponent, const BigInteger &modulus );
+    BigInteger pow( const BigInteger &exponent, const BigInteger &modulus );
+    BigInteger pow( unsigned int exponent, const BigInteger &modulus );
     BigInteger invm( const BigInteger &modulus );
 
     int lsb();
@@ -54,15 +56,16 @@ public:
     void getBytes( unsigned char *bytes, size_t size );
     bool equals( BigInteger &i );
 
-    BigInteger operator-(const BigInteger &i);
-    BigInteger operator+(const BigInteger &i);
+    BigInteger operator-(const BigInteger &i) const;
+    BigInteger operator+(const BigInteger &i) const;
     BigInteger operator%(const BigInteger &i);
     BigInteger operator*(const BigInteger &i);
     BigInteger operator*(int &i);
     BigInteger operator/(const BigInteger &i);
     BigInteger operator+=(const BigInteger &a);
+    //BigInteger operator=(const BigInteger &i);
 };
 
-BigInteger randomBigInteger( BigInteger &max );
+BigInteger randomBigInteger( const BigInteger &min, const BigInteger &max );
 
 #endif

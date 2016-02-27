@@ -25,6 +25,7 @@ static std::string encodePoints(std::vector<DistinguishedPoint> points)
         root[i]["b"] = points[i].b.toString(10);
         root[i]["x"] = points[i].x.toString(10);
         root[i]["y"] = points[i].y.toString(10);
+        root[i]["length"] = points[i].length;
     }
 
     Json::StyledWriter writer;
