@@ -4,11 +4,13 @@
 #include "logger.h"
 #include "RhoCPU.h"
 
+#define BENCHMARK_ITERATIONS 10000000
+
 ECDLCpuContext::ECDLCpuContext( unsigned int numThreads,
                                 unsigned int pointsPerThread,
                                 const ECDLPParams *params,
-                                BigInteger *rx,
-                                BigInteger *ry,
+                                const BigInteger *rx,
+                                const BigInteger *ry,
                                 int rPoints,
                                 void (*callback)(struct CallbackParameters *)
                                 )
@@ -30,66 +32,33 @@ ECDLCpuContext::ECDLCpuContext( unsigned int numThreads,
     _curve = ECCurve(_params.p, _params.n, _params.a, _params.b, _params.gx, _params.gy);
 }
 
-RhoBase *ECDLCpuContext::getRho()
+RhoBase *ECDLCpuContext::getRho(bool callback)
 {
-    int pLen = _params.p.getWordLength();
-    //int pLen = _params.p.getByteLength();
-
-    switch(pLen) {
-        case 1:
-            return new RhoCPU<1>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 2:
-            return new RhoCPU<2>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 3:
-            return new RhoCPU<3>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 4:
-            return new RhoCPU<4>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 5:
-            return new RhoCPU<5>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 6:
-            return new RhoCPU<6>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 7:
-            return new RhoCPU<7>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        case 8:
-            return new RhoCPU<8>(&_params, _rx, _ry, _rPoints, _pointsPerThread, _callback);
-        default:
-            throw "COMPILE WITH LARGER INTEGER SUPPORT";
-    }
+    return new RhoCPU(&_params, _rx, _ry, _rPoints, _pointsPerThread, callback ? _callback : NULL);
 }
 
 ECDLCpuContext::~ECDLCpuContext()
 {
+    _workerThreads.clear();
+    _workerThreadParams.clear();
 }
 
 bool ECDLCpuContext::init()
 {
+    reset();
+
+    
     for(int i = 0; i < _numThreads; i++) {
-        _workers.push_back(getRho());
+        _workerCtx.push_back(getRho());
     }
-    /*
-    // Generate the starting points
-    for(unsigned int i = 0; i < _numThreads * _pointsPerThread; i++) {
-        BigInteger a = randomBigInteger(2, _params.n);
-        BigInteger b = randomBigInteger(2, _params.n);
-
-        ECPoint g = ECPoint(_params.gx, _params.gy);
-        ECPoint q = ECPoint(_params.qx, _params.qy);
-
-        ECPoint p1 = _curve.multiplyPoint(a, g);
-        ECPoint p2 = _curve.multiplyPoint(b, q);
-
-        ECPoint p3 = _curve.addPoint(p1, p2);
-
-        _aStart[i] = a;
-        _bStart[i] = b;
-        _x[i] = p3.getX();
-        _y[i] = p3.getY();
-    }
-
-    initThreadGlobals(&_params, _rx, _ry, 32, _aStart, _bStart, _x, _y, _numThreads, _pointsPerThread, _params.dBits, _callback);
-
-    */
+    
     return true;
+}
+
+void ECDLCpuContext::reset()
+{
+    _workerThreads.clear();
+    _workerThreadParams.clear();
 }
 
 bool ECDLCpuContext::stop()
@@ -99,11 +68,8 @@ bool ECDLCpuContext::stop()
 
     // Wait for threads to finish
     for(int i = 0; i < _numThreads; i++) {
-        _threads[i].wait();
+        _workerThreads[i].wait();
     }
-
-    _threads.clear();
-    _threadParams.clear();
 
     return true;
 }
@@ -111,30 +77,21 @@ bool ECDLCpuContext::stop()
 bool ECDLCpuContext::run()
 {
     _running = true;
+
     // Run the threads
     for(int i = 0; i < _numThreads; i++) {
-        printf("Starting thread  %d\n", i);
         WorkerThreadParams params;
 
         params.threadId = i;
-        params.context = this;
-        _threadParams.push_back(params);
+        params.instance = this;
+        _workerThreadParams.push_back(params);
 
-        _threads.push_back(Thread(&ECDLCpuContext::workerThreadEntry, &_threadParams[i]));
+        _workerThreads.push_back(Thread(&ECDLCpuContext::workerThreadEntry, &_workerThreadParams[i]));
     }
 
-    /*
     // Wait for threads to finish
     for(int i = 0; i < _numThreads; i++) {
-        _threads[i].wait();
-    }
-
-    delete[] _threads;
-    delete[] _threadParams;
-
-    */
-    for(int i = 0; i < _numThreads; i++) {
-        _threads[i].wait();
+        _workerThreads[i].wait();
     }
 
     return true;
@@ -145,10 +102,9 @@ bool ECDLCpuContext::run()
  */
 void *ECDLCpuContext::workerThreadEntry(void *ptr)
 {
-    printf("workerThreadEntry()\n");
     WorkerThreadParams *params = (WorkerThreadParams *)ptr;
 
-    ((ECDLCpuContext *)params->context)->workerThreadFunction(params->threadId);
+    ((ECDLCpuContext *)params->instance)->workerThreadFunction(params->threadId);
 
     return NULL;
 }
@@ -158,12 +114,37 @@ void *ECDLCpuContext::workerThreadEntry(void *ptr)
  */
 void ECDLCpuContext::workerThreadFunction(int threadId)
 {
-    printf("Worker thread function()\n");
-    RhoBase *r = _workers[threadId];
+    RhoBase *r = _workerCtx[threadId];
 
     while(_running) {
         r->doStep();
     }
+}
+
+void *ECDLCpuContext::benchmarkThreadEntry(void *ptr)
+{
+    BenchmarkThreadParams *params = (BenchmarkThreadParams *)ptr;
+
+    ((ECDLCpuContext *)params->instance)->benchmarkThreadFunction(&params->iterationsPerSecond);
+
+    return NULL;
+}
+
+void ECDLCpuContext::benchmarkThreadFunction(unsigned long long *iterationsPerSecond)
+{
+    util::Timer timer;
+    timer.start();
+
+    RhoBase *r = getRho(false);
+
+    for(int i = 0; i < BENCHMARK_ITERATIONS; i++)
+    {
+        r->doStep();
+    }
+
+    unsigned int t = timer.getTime();
+
+    *iterationsPerSecond = (unsigned long long) ((double)BENCHMARK_ITERATIONS / ((double)t/1000.0));
 }
 
 bool ECDLCpuContext::isRunning()
@@ -173,19 +154,23 @@ bool ECDLCpuContext::isRunning()
 
 bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
 {
-    /*
     int numThreads = _numThreads;
     int pointsPerThread = _pointsPerThread;
-    int iterations = 1000000;
 
-    BenchmarkThreadParams *params = new BenchmarkThreadParams[numThreads];
-    Thread *threads = new Thread[numThreads];
+    std::vector<BenchmarkThreadParams *> params;
+    std::vector<Thread> threads;
 
     // Start threads
     for(int i = 0; i < numThreads; i++) {
-        params[i].threadId = i;
-        params[i].iterations = iterations;
-        threads[i] = Thread(benchmarkThreadFunction, &params[i]);
+        BenchmarkThreadParams *p = new BenchmarkThreadParams;
+
+        p->threadId = i;
+        p->instance = this;
+        params.push_back(p);
+
+        Thread t(benchmarkThreadEntry, p);
+
+        threads.push_back(t);
     }
 
     // Wait for all threads to finish
@@ -197,12 +182,8 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
     unsigned long long pointsPerSecond = 0;
     
     for(int i = 0; i < numThreads; i++) {
-        float seconds = (float)(params[i].t)/1000;
-        unsigned long long threadIterations = (unsigned long long)((float)iterations / seconds);
-        unsigned long long threadPoints = (iterations * pointsPerThread)/seconds;
-
-        iterationsPerSecond += threadIterations;
-        pointsPerSecond += threadPoints;
+        iterationsPerSecond += params[i]->iterationsPerSecond;
+        pointsPerSecond += params[i]->iterationsPerSecond * _pointsPerThread;
     }
 
     printf("%lld iterations per second\n", iterationsPerSecond);
@@ -211,12 +192,6 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
     if(pointsPerSecondOut) {
         *pointsPerSecondOut = pointsPerSecond;
     }
-
-    delete[] threads;
-    delete[] params;
-
-    return true;
-    */
 
     return true;
 }

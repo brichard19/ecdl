@@ -99,12 +99,12 @@ void pointFoundCallback(struct CallbackParameters *p)
         printf("\n\n" );
         return;
     }
-        printf("a: %s\n", p->aStart.toString(16).c_str());
-        printf("b: %s\n", p->bStart.toString(16).c_str());
-        printf("x: %s\n", p->x.toString(16).c_str());
-        printf("y: %s\n", p->y.toString(16).c_str());
-        printf("length: %d\n", p->length);
-        printf("\n\n" );
+    printf("a: %s\n", p->aStart.toString(16).c_str());
+    printf("b: %s\n", p->bStart.toString(16).c_str());
+    printf("x: %s\n", p->x.toString(16).c_str());
+    printf("y: %s\n", p->y.toString(16).c_str());
+    printf("length: %d\n", p->length);
+    printf("\n\n" );
     addPointToCache(p->aStart, p->bStart, p->x, p->y, p->length);
 }
 
@@ -173,8 +173,8 @@ void *sendPointsThread(void *p)
             }
 
             if(success) {
-                //_pointsCache.clear();
-                _pointsCache.erase(_pointsCache.begin(), _pointsCache.begin() + _config.pointCacheSize);
+                _pointsCache.clear();
+                //_pointsCache.erase(_pointsCache.begin(), _pointsCache.begin() + _config.pointCacheSize);
             }
         }
         _pointsMutex.release();

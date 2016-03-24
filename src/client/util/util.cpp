@@ -20,6 +20,21 @@ unsigned int getSystemTime()
 #endif
 }
 
+Timer::Timer()
+{
+    _startTime = 0;
+}
+
+void Timer::start()
+{
+    _startTime = getSystemTime();
+}
+
+unsigned int Timer::getTime()
+{
+    return getSystemTime() - _startTime;
+}
+
 std::string hexEncode(const unsigned char *bytes, unsigned int len)
 {
     char buf[3] = {0};

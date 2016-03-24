@@ -91,7 +91,7 @@ namespace CUDA {
     /**
      * Function to get device information
      */
-    void getDeviceInfo(int device, DeviceInfo &devInfo )
+    void getDeviceInfo(int device, DeviceInfo &devInfo)
     {
         cudaDeviceProp properties;
         cudaError_t cudaError = cudaSuccess;

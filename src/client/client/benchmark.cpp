@@ -116,7 +116,9 @@ void doBenchmark()
         params.dBits = 32;
 
         ECCurve curve(params.p, params.n, params.a, params.b, params.gx, params.gy);
-        generateRPoints(curve, ECPoint(params.qx, params.qy), NULL, NULL, rx, ry, 32);
+       
+        ECPoint q(params.qx, params.qy); 
+        generateRPoints(curve, q, NULL, NULL, rx, ry, 32);
 
         Logger::logInfo("Running benchmark for %d-bit prime curve\n", bits[i]);
         #ifdef _CUDA
@@ -124,7 +126,7 @@ void doBenchmark()
         #else
         ctx = new ECDLCpuContext(_config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
         #endif
-        ctx->init();
+        //ctx->init();
         ctx->benchmark(NULL);
         delete ctx;
     }

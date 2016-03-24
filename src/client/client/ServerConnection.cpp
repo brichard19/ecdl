@@ -45,7 +45,7 @@ static int decodeStatusMsg(std::string encoded)
 
     std::string statusString = root.get("status", "").asString();
 
-    if(statusString == "running") {
+    if(statusString == "unsolved") {
         return SERVER_STATUS_RUNNING;
     }
 

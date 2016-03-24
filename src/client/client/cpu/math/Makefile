@@ -8,6 +8,7 @@ ifeq ($(X86_ASM),1)
 OBJS+=x86/x86.o
 INCLUDE+=-I./x86
 TARGETS=x86asm
+#CXXFLAGS+=-D_X86
 else
 INCLUDE+=-I./gmp
 endif

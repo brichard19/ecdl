@@ -13,13 +13,14 @@ class ECDLCpuContext;
 class RhoBase;
 
 typedef struct {
-    ECDLCpuContext *context;
+    ECDLCpuContext *instance;
     int threadId;
 }WorkerThreadParams;
 
 typedef struct {
     ECDLCpuContext *instance;
     int threadId;
+    unsigned long long iterationsPerSecond;
 }BenchmarkThreadParams;
 
 
@@ -27,20 +28,18 @@ typedef struct {
 class ECDLCpuContext : public ECDLContext {
 
 private:
-        // Problem parameters
+
+    // Problem parameters
     ECDLPParams _params;
     ECCurve _curve;
 
     // Number of threads
     int _numThreads;
 
-    // Thread handles
-    std::vector<Thread> _threads;
-
-    std::vector<WorkerThreadParams> _threadParams;
-
-    // Workers for each thread
-    std::vector<RhoBase *> _workers;
+    // Workers
+    std::vector<Thread> _workerThreads;
+    std::vector<WorkerThreadParams> _workerThreadParams;
+    std::vector<RhoBase *> _workerCtx;
 
     // Flag to indicate if the threads are running
     volatile bool _running;
@@ -57,29 +56,32 @@ private:
     BigInteger _ry[ NUM_R_POINTS ];
 
     static void *workerThreadEntry(void *ptr);
+    static void *benchmarkThreadEntry(void *ptr);
 
     void workerThreadFunction(int threadId);
+    void benchmarkThreadFunction(unsigned long long *iterationsPerSecond);
 
-    RhoBase *getRho();
+    RhoBase *getRho(bool callback = true);
 
 public:
 
     virtual bool init();
+    void reset();
     virtual bool run();
     virtual bool stop();
     virtual bool isRunning();
+    virtual bool benchmark(unsigned long long *pointsPerSecond);
 
     ECDLCpuContext(
                    unsigned int threads,
                    unsigned int pointsPerThread,
                    const ECDLPParams *params,
-                   BigInteger *rx,
-                   BigInteger *ry,
+                   const BigInteger *rx,
+                   const BigInteger *ry,
                    int rPoints,
                    void (*callback)(struct CallbackParameters *)
                   );
 
-    virtual bool benchmark(unsigned long long *pointsPerSecond);
     virtual ~ECDLCpuContext();
 };
 

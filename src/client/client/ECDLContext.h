@@ -30,6 +30,7 @@ class ECDLContext {
 
 public:
     virtual bool init() = 0;
+    virtual void reset() = 0;
     virtual bool stop() = 0;
     virtual bool run() = 0;
     virtual bool isRunning() = 0;

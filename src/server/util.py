@@ -111,8 +111,6 @@ Decompresses a compressed point
 '''
 def decompress_point(compressed, a, b, p):
 
-    print "Decompressing " + compressed
-
     # Get the even/odd of the y coordinate
     sign = compressed[:2]
 
@@ -121,7 +119,6 @@ def decompress_point(compressed, a, b, p):
 
     # compute the solutions of y to y^2 = x^3 + ax + b
     z = ((x*x*x) + a * x + b) % p
-    print "Computing square root of " + hex(z)
     y = squareRootModP(z, p)
 
     #y1 is even, y2 is odd

@@ -4,7 +4,7 @@
 /**
  * Generates a set of R points for performing random walk
  */
-void generateRPoints(ECCurve curve, ECPoint q, BigInteger *aAra, BigInteger *bAra, BigInteger *xAra, BigInteger *yAra, int n)
+void generateRPoints(ECCurve &curve, ECPoint &q, BigInteger *aAra, BigInteger *bAra, BigInteger *xAra, BigInteger *yAra, int n)
 {
     ECPoint g = curve.getBasepoint();
     BigInteger order = curve.n();
@@ -27,7 +27,6 @@ void generateRPoints(ECCurve curve, ECPoint q, BigInteger *aAra, BigInteger *bAr
         // Add the two points
         r3 = curve.addPoint(r1, r2);
 
-        // Convert coordinates to montgomery form
         xAra[ i ] = r3.getX();
         yAra[ i ] = r3.getY();
 

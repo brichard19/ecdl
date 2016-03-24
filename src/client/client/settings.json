@@ -9,6 +9,6 @@
 
     "cuda_threads": 32,
     "cuda_blocks": 1,
-    "cuda_points_per_thread": 16,
+    "cuda_points_per_thread": 1,
     "cuda_device": 0
 }

@@ -17,6 +17,7 @@
 
 void printInt(const unsigned long *x, int len);
 
+
 class FpBase {
 public:
     virtual void subModP(const unsigned long *a, const unsigned long *b, unsigned long *diff) = 0;
@@ -25,15 +26,17 @@ public:
     virtual void inverseModP(const unsigned long *input, unsigned long *inverse) = 0;
 };
 
+FpBase *getFp(BigInteger &p);
+
 template <int N> 
 class Fp : public FpBase {
 
 private:
     // m value for Barrett reduction.
-    unsigned long _m[N];
+    unsigned long _m[WORDS(N)];
 
     // Prime modulus
-    unsigned long _p[N];
+    unsigned long _p[WORDS(N)];
 
     // Modulus length in bits
     int _pBits;
@@ -57,11 +60,11 @@ public:
 
     Fp() {}
 
-    Fp(BigInteger &p)
+    Fp(const BigInteger &p)
     {
+        printf("Initializing Fp for %s %d bytes\n", p.toString().c_str(), N);
         memset(_p, 0, sizeof(_p));
         memset(_m, 0, sizeof(_m));
-
         _pBits = p.getBitLength();
         _pWords = p.getWordLength();
         p.getWords(_p, _pWords);
@@ -92,18 +95,16 @@ public:
  */
 template<int N> void Fp<N>::getHighBits(const unsigned long *in, unsigned long *out)
 {
-    const int WORDS = WORDLEN(N);
-
     int rShift = (2*_pBits) % WORD_LENGTH_BITS;
     int lShift = WORD_LENGTH_BITS - rShift;
     int index = (2 * _pBits) / WORD_LENGTH_BITS;
 
     if(rShift > 0) {
-        for(int i = 0; i < WORDS; i++) {
+        for(int i = 0; i < WORDS(N); i++) {
             out[ i ] = (in[ index + i ] >> rShift) | (in[ index + i + 1 ] << lShift);
         }
     } else {
-        for(int i = 0; i < WORDS; i++) {
+        for(int i = 0; i < WORDS(N); i++) {
             out[ i ] = in[index + i];
         }
     }
@@ -115,43 +116,34 @@ template<int N> void Fp<N>::getHighBits(const unsigned long *in, unsigned long *
  */
 template<int N> void Fp<N>::reduceModP(const unsigned long *x, unsigned long *c)
 {
-    /*
-    const int WORDS = WORDLEN(N);
-    const int WORDS2 = WORDLEN2(N);
-    const int WORDS3 = WORDLEN3(N);
-    */
-
-    unsigned long xm[3*N] = {0};
-
-    //printf("m: ");
-    //printInt(_m, N);
+    unsigned long xm[WORDS(N) + WORDS(2*N)] = {0};
 
     // Multiply by m to get a 3k-bit value
-    mul<N, 2*N>(_m, x, xm);
+    mul<WORDS(N), WORDS(2*N)>(_m, x, xm);
 
     // It's possible m can be 1 bit longer than P. If P ends on a word boundary then
     // m will be 1 word longer than p, so it's quicker to do an addition on the higher
     // bits of xm than to multiply by 1.
-    if(_mWords > N) {
-        add<2*N>(x, &xm[N], &xm[N]);
+    if(_mWords > WORDS(N)) {
+        add<WORDS(2*N)>(x, &xm[WORDS(N)], &xm[WORDS(N)]);
     }
 
     // Get the high k bits of xm
-    unsigned long q[N] = {0};
+    unsigned long q[WORDS(N)] = {0};
     getHighBits(xm, q);
 
     // Multiply by p to get a 2k-bit value
-    unsigned long qp[2*N] = {0};
-    mul<N>(q, _p, qp);
+    unsigned long qp[WORDS(2*N)] = {0};
+    mul<WORDS(N)>(q, _p, qp);
 
     // Subtract from x to get a k-bit value
-    sub<N>(x, qp, c);
+    sub<WORDS(N)>(x, qp, c);
 
-    qp[N-1] &= ((unsigned long)~0 >> (_pBits % WORD_LENGTH_BITS));
+    qp[WORDS(N)-1] &= ((unsigned long)~0 >> (_pBits % WORD_LENGTH_BITS));
 
     // Subtract again if necessary
-    if(greaterThanEqualTo<N>(c, _p)) {
-        sub<N>(c, _p, c);
+    if(greaterThanEqualTo<WORDS(N)>(c, _p)) {
+        sub<WORDS(N)>(c, _p, c);
     }
 }
 
@@ -160,11 +152,11 @@ template<int N> void Fp<N>::reduceModP(const unsigned long *x, unsigned long *c)
  */
 template<int N> void Fp<N>::subModP(const unsigned long *a, const unsigned long *b, unsigned long *diff)
 {
-    int borrow = sub<N>(a, b, diff);
+    int borrow = sub<WORDS(N)>(a, b, diff);
 
     // Check for negative
     if(borrow) {
-        add<N>(diff, _p, diff);
+        add<WORDS(N)>(diff, _p, diff);
     }
 }
 
@@ -173,8 +165,8 @@ template<int N> void Fp<N>::subModP(const unsigned long *a, const unsigned long 
  */
 template<int N> void Fp<N>::multiplyModP(const unsigned long *a, const unsigned long *b, unsigned long *c)
 {
-    unsigned long product[N*2];
-    mul<N>(a, b, product);
+    unsigned long product[WORDS(N*2)];
+    mul<WORDS(N)>(a, b, product);
     reduceModP(product, c);
 }
 
@@ -183,9 +175,9 @@ template<int N> void Fp<N>::multiplyModP(const unsigned long *a, const unsigned 
  */
 template<int N> void Fp<N>::squareModP(const unsigned long *a, unsigned long *aSquared)
 {
-    unsigned long product[N*2];
+    unsigned long product[WORDS(N*2)];
 
-    square<N>(a, product);
+    square<WORDS(N)>(a, product);
     reduceModP(product, aSquared);
 }
 
@@ -205,7 +197,7 @@ template<int N> void Fp<N>::inverseModP(const unsigned long *input, unsigned lon
     mpz_invert(aInv, a, _gmp_p);
 
     // Need to zero out the destination
-    memset(inverse, 0, sizeof(unsigned long) * N);
+    memset(inverse, 0, sizeof(unsigned long) * WORDS(N));
 
     mpz_export(inverse, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_LITTLE, 0, aInv);
 

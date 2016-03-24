@@ -1,12 +1,13 @@
 
 SRC=$(wildcard *.cpp)
 SRC:=$(filter-out workerthread.cpp, $(SRC))
-SRC:=$(filter-out RhoCPU.cpp, $(SRC))
+#SRC:=$(filter-out RhoCPU.cpp, $(SRC))
 
 OBJS=$(SRC:.cpp=.o)
 
 ifeq ($(X86_ASM),1)
 INCLUDE+=-I./math/x86
+CXXFLAGS += -D_X86
 else
 INCLUDE+=-I./math/gmp
 endif

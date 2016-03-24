@@ -34,36 +34,36 @@ public:
 
     std::string toString(int base = 10) const;
 
-    BigInteger pow( unsigned int exponent );
-    BigInteger pow( const BigInteger &exponent, const BigInteger &modulus );
-    BigInteger pow( unsigned int exponent, const BigInteger &modulus );
-    BigInteger invm( const BigInteger &modulus );
+    BigInteger pow( unsigned int exponent ) const;
+    BigInteger pow( const BigInteger &exponent, const BigInteger &modulus ) const;
+    BigInteger pow( unsigned int exponent, const BigInteger &modulus ) const;
+    BigInteger invm( const BigInteger &modulus ) const;
 
-    int lsb();
-    BigInteger rshift( int n );
-    bool isZero();
+    int lsb() const;
+    BigInteger rshift( int n ) const;
+    bool isZero() const;
     bool operator==( const BigInteger &i ) const;
     bool operator!=( const BigInteger &i ) const;
-    size_t getBitLength();
-    size_t getByteLength();
-    size_t getWordLength();
-    size_t getLength32();
-    size_t getLength64();
-    size_t getLengthNative();
-    void getWords( unsigned long *words, size_t size );
-    void getWords( unsigned int *words, size_t size );
-    void getWords(unsigned int *words);
-    void getBytes( unsigned char *bytes, size_t size );
-    bool equals( BigInteger &i );
+    size_t getBitLength() const;
+    size_t getByteLength() const;
+    size_t getWordLength() const;
+    size_t getLength32() const;
+    size_t getLength64() const;
+    size_t getLengthNative() const;
+    void getWords( unsigned long *words, size_t size ) const;
+    void getWords( unsigned int *words, size_t size ) const;
+    void getWords(unsigned int *words) const;
+    void getBytes( unsigned char *bytes, size_t size ) const;
+    bool equals( BigInteger &i ) const;
 
     BigInteger operator-(const BigInteger &i) const;
     BigInteger operator+(const BigInteger &i) const;
-    BigInteger operator%(const BigInteger &i);
-    BigInteger operator*(const BigInteger &i);
-    BigInteger operator*(int &i);
-    BigInteger operator/(const BigInteger &i);
-    BigInteger operator+=(const BigInteger &a);
-    //BigInteger operator=(const BigInteger &i);
+    BigInteger operator%(const BigInteger &i) const;
+    BigInteger operator*(const BigInteger &i) const;
+    BigInteger operator*(int &i) const;
+    BigInteger operator/(const BigInteger &i) const;
+    BigInteger operator+=(const BigInteger &a) const;
+    //BigInteger operator=(const BigInteger &i) const;
 };
 
 BigInteger randomBigInteger( const BigInteger &min, const BigInteger &max );

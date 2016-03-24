@@ -3,7 +3,7 @@ LIBDIR=$(shell pwd)/lib
 LIBS+=-L$(LIBDIR)
 
 # C++ options
-CXX=g++
+CXX=g++ -g -O2
 CXXFLAGS=-Wall
 
 # CUDA variables

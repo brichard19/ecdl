@@ -10,7 +10,7 @@
 
 BigInteger::BigInteger()
 {
-    mpz_set_si(e.get_mpz_t(), 0);
+    //mpz_set_si(e.get_mpz_t(), 0);
 }
 
 BigInteger::~BigInteger()
@@ -19,7 +19,8 @@ BigInteger::~BigInteger()
 
 BigInteger::BigInteger(int i)
 {
-    mpz_set_si(this->e.get_mpz_t(), i);
+    //mpz_set_si(this->e.get_mpz_t(), i);
+    this->e = i;
 }
 
 BigInteger::BigInteger(std::string s, int base)
@@ -72,7 +73,7 @@ BigInteger::BigInteger(const unsigned int *words, size_t len)
     mpz_import(this->e.get_mpz_t(), len, GMP_BYTE_ORDER_LSB, sizeof(unsigned int), GMP_ENDIAN_NATIVE, 0, words);
 }
 
-BigInteger BigInteger::pow(unsigned int exponent)
+BigInteger BigInteger::pow(unsigned int exponent) const
 {
     BigInteger product;
 
@@ -81,7 +82,7 @@ BigInteger BigInteger::pow(unsigned int exponent)
     return product;
 }
 
-BigInteger BigInteger::pow(const BigInteger &exponent, const BigInteger &modulus)
+BigInteger BigInteger::pow(const BigInteger &exponent, const BigInteger &modulus) const
 {
     BigInteger product;
 
@@ -90,7 +91,7 @@ BigInteger BigInteger::pow(const BigInteger &exponent, const BigInteger &modulus
     return product;
 }
 
-BigInteger BigInteger::pow(unsigned int exponent, const BigInteger &modulus)
+BigInteger BigInteger::pow(unsigned int exponent, const BigInteger &modulus) const
 {
     BigInteger product;
 
@@ -99,7 +100,7 @@ BigInteger BigInteger::pow(unsigned int exponent, const BigInteger &modulus)
     return product;
 }
 
-BigInteger BigInteger::invm(const BigInteger &modulus)
+BigInteger BigInteger::invm(const BigInteger &modulus) const
 {
     BigInteger inverse;
 
@@ -108,7 +109,7 @@ BigInteger BigInteger::invm(const BigInteger &modulus)
     return inverse;
 }
 
-BigInteger BigInteger::rshift(int n)
+BigInteger BigInteger::rshift(int n) const
 {
     BigInteger tmp;
 
@@ -118,12 +119,12 @@ BigInteger BigInteger::rshift(int n)
     return tmp;
 }
 
-int BigInteger::lsb()
+int BigInteger::lsb() const
 {
     return mpz_tstbit( this->e.get_mpz_t(), 0 );
 }
 
-bool BigInteger::isZero()
+bool BigInteger::isZero() const
 {
     int zero = mpz_cmp_ui( this->e.get_mpz_t(), 0 );
 
@@ -133,13 +134,6 @@ bool BigInteger::isZero()
         return false;
     }
 }
-
-/*
-BigInteger BigInteger::operator=(const BigInteger &i)
-{
-    this->e = i.e;
-}
-*/
 
 bool BigInteger::operator==(const BigInteger &i) const
 {
@@ -154,6 +148,12 @@ bool BigInteger::operator==(const BigInteger &i) const
 
 bool BigInteger::operator!=(const BigInteger &i) const
 {
+    if (this->e != i.e) {
+        return true;
+    } else {
+        return false;
+    }
+    /*
     int r = mpz_cmp( this->e.get_mpz_t(), i.e.get_mpz_t() );
 
     if( r != 0 ) {
@@ -161,9 +161,10 @@ bool BigInteger::operator!=(const BigInteger &i) const
     }
 
     return false;
+    */
 }
 
-BigInteger BigInteger::operator%(const BigInteger &m)
+BigInteger BigInteger::operator%(const BigInteger &m) const
 {
     BigInteger mod;
     mod.e = this->e % m.e;
@@ -191,7 +192,7 @@ BigInteger BigInteger::operator+(const BigInteger &a) const
     return sum;
 }
 
-BigInteger BigInteger::operator+=(const BigInteger &a)
+BigInteger BigInteger::operator+=(const BigInteger &a) const
 {
     BigInteger sum;
 
@@ -200,15 +201,28 @@ BigInteger BigInteger::operator+=(const BigInteger &a)
     return sum;
 }
 
-BigInteger BigInteger::operator*(const BigInteger &a)
+/*
+BigInteger BigInteger::operator=(const BigInteger &i) const
+{
+    printf("BigInteger assignment operator %s\n", i.toString().c_str());
+    fflush(stdout);
+    //this->e = i.e;
+    BigInteger x;
+    //mpz_set(x.e, i.e);
+    x.e = i.e;
+
+    return x;
+}
+*/
+
+BigInteger BigInteger::operator*(const BigInteger &a) const
 {
     BigInteger product;
     product.e = this->e * a.e;
-
     return product;
 }
 
-BigInteger BigInteger::operator*(int &i)
+BigInteger BigInteger::operator*(int &i) const
 {
     BigInteger product;
     product.e = this->e * i;
@@ -216,7 +230,7 @@ BigInteger BigInteger::operator*(int &i)
     return product;
 }
 
-BigInteger BigInteger::operator/(const BigInteger &i)
+BigInteger BigInteger::operator/(const BigInteger &i) const
 {
     BigInteger quotient;
     quotient.e = this->e / i.e;
@@ -233,21 +247,21 @@ std::string BigInteger::toString(int base) const
     return s;
 }
 
-size_t BigInteger::getBitLength()
+size_t BigInteger::getBitLength() const
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
 
     return bits;
 }
 
-size_t BigInteger::getByteLength()
+size_t BigInteger::getByteLength() const
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
 
     return (bits + 7) / 8;
 }
 
-size_t BigInteger::getWordLength()
+size_t BigInteger::getWordLength() const
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
     int wordSize = sizeof(unsigned long)*8;
@@ -255,7 +269,7 @@ size_t BigInteger::getWordLength()
     return (bits + wordSize - 1) / wordSize;
 }
 
-size_t BigInteger::getLengthNative()
+size_t BigInteger::getLengthNative() const
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
     int wordSize = sizeof(unsigned long)*8;
@@ -263,46 +277,46 @@ size_t BigInteger::getLengthNative()
     return (bits + wordSize - 1) / wordSize;
 }
 
-size_t BigInteger::getLength32()
+size_t BigInteger::getLength32() const
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
 
     return (bits + 31) / 32;
 }
 
-size_t BigInteger::getLength64()
+size_t BigInteger::getLength64() const
 {
     size_t bits = mpz_sizeinbase( this->e.get_mpz_t(), 2 );
 
     return (bits + 63) / 64;
 }
 
-void BigInteger::getWords(unsigned long *words, size_t size)
+void BigInteger::getWords(unsigned long *words, size_t size) const
 {
     memset( words, 0, size * sizeof(unsigned long) );
     mpz_export( words, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned long), GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
 
-void BigInteger::getWords(unsigned int *words, size_t size)
+void BigInteger::getWords(unsigned int *words, size_t size) const
 {
     memset( words, 0, size * sizeof(unsigned int) );
     mpz_export( words, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned int), GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
-void BigInteger::getWords(unsigned int *words)
+void BigInteger::getWords(unsigned int *words) const
 {
     mpz_export( words, NULL, GMP_BYTE_ORDER_LSB, sizeof(unsigned int), GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
 
-void BigInteger::getBytes(unsigned char *bytes, size_t size)
+void BigInteger::getBytes(unsigned char *bytes, size_t size) const
 {
     memset( bytes, 0, size );
     mpz_export( bytes, NULL, GMP_BYTE_ORDER_LSB, 1, GMP_ENDIAN_NATIVE, 0, this->e.get_mpz_t() );
 }
 
-bool BigInteger::equals(BigInteger &i)
+bool BigInteger::equals(BigInteger &i) const
 {
     int r = mpz_cmp( this->e.get_mpz_t(), i.e.get_mpz_t() );
 
