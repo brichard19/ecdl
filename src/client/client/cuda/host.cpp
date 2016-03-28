@@ -23,13 +23,13 @@ void printBigInt(unsigned int *x, int len)
 /**
  * Checks if the kernel should still be running
  */
-bool ECDLCudaContext::isRunning()
+bool RhoCUDA::isRunning()
 {
     //TODO: Protect access with a mutex
     return _runFlag;
 }
 
-void ECDLCudaContext::setRunFlag(bool flag)
+void RhoCUDA::setRunFlag(bool flag)
 {
     // TODO: Protect access with mutex
     _runFlag = flag;
@@ -38,7 +38,7 @@ void ECDLCudaContext::setRunFlag(bool flag)
 /**
  * If the kernl is currently running, stop it
  */
-bool ECDLCudaContext::stop()
+bool RhoCUDA::stop()
 {
     // TODO: Protect access to this with a mutex
     _runFlag = false;
@@ -49,7 +49,7 @@ bool ECDLCudaContext::stop()
 /**
  * Takes an integer array and 'splats' its contents into coalesced form that the GPU uses
  */
-void ECDLCudaContext::splatBigInt(const unsigned int *x, unsigned int *ara, int index)
+void RhoCUDA::splatBigInt(const unsigned int *x, unsigned int *ara, int index)
 {
     unsigned int numPoints = _totalPoints;
 
@@ -62,7 +62,7 @@ void ECDLCudaContext::splatBigInt(const unsigned int *x, unsigned int *ara, int 
  * Performs the opposite of splatBigInt. Reads an integer from coalesced form
  * into an array.
  */
-void ECDLCudaContext::extractBigInt(const unsigned int *ara, int index, unsigned int *x)
+void RhoCUDA::extractBigInt(const unsigned int *ara, int index, unsigned int *x)
 {
     unsigned int numPoints = _totalPoints;
 
@@ -71,7 +71,7 @@ void ECDLCudaContext::extractBigInt(const unsigned int *ara, int index, unsigned
     }
 }
 
-void ECDLCudaContext::setRPoints()
+void RhoCUDA::setRPoints()
 {
     unsigned int rxAra[ _numRPoints * _pWords ];
     unsigned int ryAra[ _numRPoints * _pWords ];
@@ -85,6 +85,7 @@ void ECDLCudaContext::setRPoints()
     }
 
     cudaError_t cudaError = copyRPointsToDevice(rxAra, ryAra, _pWords, _numRPoints);
+
     if( cudaError != cudaSuccess ) {
         throw cudaError;
     }
@@ -93,7 +94,7 @@ void ECDLCudaContext::setRPoints()
 /**
  * Generates required constants and copies them to the GPU constant memory
  */
-void ECDLCudaContext::setupDeviceConstants()
+void RhoCUDA::setupDeviceConstants()
 {
     cudaError_t cudaError = cudaSuccess;
 
@@ -102,18 +103,6 @@ void ECDLCudaContext::setupDeviceConstants()
 
     unsigned int mAra[_mWords];
     _m.getWords(mAra);
-
-    BigInteger pMinus2 = _params.p - 2;
-    unsigned int pMinus2Ara[_pWords];
-    pMinus2.getWords(pMinus2Ara);
-
-    BigInteger pTimes2 = _params.p * 2;
-    unsigned int pTimes2Ara[pTimes2.getLength32()];
-    pTimes2.getWords(pTimes2Ara);
-
-    BigInteger pTimes3 = _params.p * 3;
-    unsigned int pTimes3Ara[pTimes3.getLength32()];
-    pTimes3.getWords(pTimes3Ara);
 
     cudaError = initDeviceParams(pAra, _pBits, mAra, _mBits, _params.dBits);
 
@@ -132,7 +121,7 @@ void ECDLCudaContext::setupDeviceConstants()
 /**
  * Generates a random point in the form aG + bQ. 
  */
-void ECDLCudaContext::getRandomPoint(unsigned int *x, unsigned int *y, unsigned int *a, unsigned int *b)
+void RhoCUDA::getRandomPoint(unsigned int *x, unsigned int *y, unsigned int *a, unsigned int *b)
 {
     unsigned int mask = (0x01 << _params.dBits) - 1;
     do {
@@ -150,11 +139,11 @@ void ECDLCudaContext::getRandomPoint(unsigned int *x, unsigned int *y, unsigned 
         BigInteger m2 = randomBigInteger(2, _params.n);
 
         // aG, bQ
-        ECPoint aG = _curve.multiplyPoint(m1, g);
-        ECPoint bQ = _curve.multiplyPoint(m2, q);
+        ECPoint aG = _curve.multiply(m1, g);
+        ECPoint bQ = _curve.multiply(m2, q);
 
         // aG + bQ
-        ECPoint sum = _curve.addPoint(aG, bQ);
+        ECPoint sum = _curve.add(aG, bQ);
 
         // Convert to uint160 type
         BigInteger sumX = sum.getX();
@@ -170,7 +159,7 @@ void ECDLCudaContext::getRandomPoint(unsigned int *x, unsigned int *y, unsigned 
 /**
  * Generates random 'a' and 'b' values
  */
-void ECDLCudaContext::generateExponentsHost()
+void RhoCUDA::generateExponentsHost()
 {
     unsigned int numPoints = _totalPoints;
 
@@ -197,7 +186,7 @@ void ECDLCudaContext::generateExponentsHost()
             Q, 2Q, 4G, 8Q, ... (2^n)Q,
             G+Q, 2(G+Q), 4(G+Q), 8(G+Q), ... (2^n)(G+Q)
  */
-void ECDLCudaContext::generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy)
+void RhoCUDA::generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy)
 {
     // Clear memory
     memset(gx, 0, sizeof(unsigned int) * _pBits * _pWords);
@@ -210,7 +199,7 @@ void ECDLCudaContext::generateLookupTable(unsigned int *gx, unsigned int *gy, un
     // G, Q, G+Q
     ECPoint g(_params.gx, _params.gy);
     ECPoint q(_params.qx, _params.qy);
-    ECPoint sum = _curve.addPoint(g, q);
+    ECPoint sum = _curve.add(g, q);
 
     if(!_curve.pointExists(g)) {
         printf("Error: G is not on the curve!\n");
@@ -239,9 +228,9 @@ void ECDLCudaContext::generateLookupTable(unsigned int *gx, unsigned int *gy, un
     y.getWords(gqy);
 
     for(unsigned int i = 1; i < _pBits; i++) {
-        g = _curve.doublePoint(g);
-        q = _curve.doublePoint(q);
-        sum = _curve.addPoint(g, q);
+        g = _curve.doubl(g);
+        q = _curve.doubl(q);
+        sum = _curve.add(g, q);
 
         if(!_curve.pointExists(g)) {
             printf("Error: G is not on the curve!\n");
@@ -275,7 +264,7 @@ void ECDLCudaContext::generateLookupTable(unsigned int *gx, unsigned int *gy, un
  * Generates a random set of starting points for the random walks. Each
  * GPU thread has a different starting point
  */
-void ECDLCudaContext::generateStartingPoints()
+void RhoCUDA::generateStartingPoints()
 {   
     cudaError_t cudaError = cudaSuccess;
 
@@ -331,7 +320,7 @@ void ECDLCudaContext::generateStartingPoints()
                                   devGQx, devGQy,
                                   _devX, _devY,
                                   _devDiffBuf, _devChainBuf,
-                                  i, _totalPoints, _pointsInParallel);
+                                  _totalPoints, _pointsInParallel, i);
         if( cudaError != cudaSuccess ) {
             goto end;
         }
@@ -364,9 +353,9 @@ void ECDLCudaContext::generateStartingPoints()
          
         ECPoint p(xBig, yBig);
 
-        ECPoint p1 = _curve.multiplyPoint(aBig, g);
-        ECPoint p2 = _curve.multiplyPoint(bBig, q);
-        ECPoint sum = _curve.addPoint(p1, p2);
+        ECPoint p1 = _curve.multiply(aBig, g);
+        ECPoint p2 = _curve.multiply(bBig, q);
+        ECPoint sum = _curve.add(p1, p2);
 
         if(!_curve.pointExists(p)) {
             printf("Error: Point is NOT on curve!\n");
@@ -410,7 +399,7 @@ end:
     }
 }
 
-void ECDLCudaContext::writeBigIntToDevice( const unsigned int *x, unsigned int *dest, unsigned int index )
+void RhoCUDA::writeBigIntToDevice(const unsigned int *x, unsigned int *dest, unsigned int index )
 {
     unsigned int numPoints = _totalPoints;
 
@@ -420,7 +409,7 @@ void ECDLCudaContext::writeBigIntToDevice( const unsigned int *x, unsigned int *
 }
 
 
-void ECDLCudaContext::readBigIntFromDevice( const unsigned int *src, unsigned int index, unsigned int *x)
+void RhoCUDA::readBigIntFromDevice(const unsigned int *src, unsigned int index, unsigned int *x)
 {
     unsigned int numPoints = _totalPoints;
 
@@ -429,22 +418,22 @@ void ECDLCudaContext::readBigIntFromDevice( const unsigned int *src, unsigned in
     }
 }
 
-void ECDLCudaContext::readXFromDevice(unsigned int index, unsigned int *x)
+void RhoCUDA::readXFromDevice(unsigned int index, unsigned int *x)
 {
     readBigIntFromDevice(_devX, index, x);
 }
 
-void ECDLCudaContext::readYFromDevice(unsigned int index, unsigned int *y)
+void RhoCUDA::readYFromDevice(unsigned int index, unsigned int *y)
 {
     readBigIntFromDevice(_devY, index, y);
 }
 
-void ECDLCudaContext::writeXToDevice(unsigned int *x, unsigned int index)
+void RhoCUDA::writeXToDevice(unsigned int *x, unsigned int index)
 {
     writeBigIntToDevice(x, _devX, index);
 }
 
-void ECDLCudaContext::writeYToDevice(unsigned int *y, unsigned int index)
+void RhoCUDA::writeYToDevice(unsigned int *y, unsigned int index)
 {
     writeBigIntToDevice(y, _devY, index);
 }
@@ -453,7 +442,7 @@ void ECDLCudaContext::writeYToDevice(unsigned int *y, unsigned int index)
  * Allocates memory on the host and device according to the number of threads, and
  * number of simultanous computations per thread
  */
-void ECDLCudaContext::allocateBuffers()
+void RhoCUDA::allocateBuffers()
 {
     size_t numPoints = _totalPoints;
     size_t arraySize = sizeof(unsigned int) * _pWords * numPoints;
@@ -508,7 +497,7 @@ void ECDLCudaContext::allocateBuffers()
 /**
  * Frees the memory allocated by allocateBuffers
  */
-void ECDLCudaContext::freeBuffers()
+void RhoCUDA::freeBuffers()
 {
     cudaFree(_aStart);
     cudaFree(_bStart);
@@ -526,7 +515,7 @@ void ECDLCudaContext::freeBuffers()
 /**
  * Verifies that aG + bQ = (x,y)
  */
-bool ECDLCudaContext::verifyPoint(BigInteger &x, BigInteger &y)
+bool RhoCUDA::verifyPoint(BigInteger &x, BigInteger &y)
 {
     ECPoint p = ECPoint(x, y);
 
@@ -540,7 +529,7 @@ bool ECDLCudaContext::verifyPoint(BigInteger &x, BigInteger &y)
     return true;
 }
 
-bool ECDLCudaContext::initializeDevice()
+bool RhoCUDA::initializeDevice()
 {
     // Set current device
     CUDA::setDevice(_device);
@@ -565,7 +554,7 @@ bool ECDLCudaContext::initializeDevice()
     return true;
 }
 
-void ECDLCudaContext::uninitializeDevice()
+void RhoCUDA::uninitializeDevice()
 {
     freeBuffers();
     cudaDeviceReset();
@@ -575,7 +564,7 @@ void ECDLCudaContext::uninitializeDevice()
 /**
  * Creates a new context
  */
-ECDLCudaContext::ECDLCudaContext( int device, unsigned int blocks,
+RhoCUDA::RhoCUDA( int device, unsigned int blocks,
                                       unsigned int threads,
                                       unsigned int totalPoints,
                                       unsigned int pointsInParallel,
@@ -597,6 +586,8 @@ ECDLCudaContext::ECDLCudaContext( int device, unsigned int blocks,
     _numRPoints = numRPoints; 
     _params.p = params->p;
 
+
+    // Initialize barrett reduction bits
     _pBits = _params.p.getBitLength();
     _pWords = (_pBits + 31) / 32;
 
@@ -618,7 +609,7 @@ ECDLCudaContext::ECDLCudaContext( int device, unsigned int blocks,
 /**
  * Initializes the context with random points
  */
-bool ECDLCudaContext::init()
+bool RhoCUDA::init()
 {
     try { 
         initializeDevice();
@@ -631,10 +622,15 @@ bool ECDLCudaContext::init()
     return true;
 }
 
+void RhoCUDA::reset()
+{
+
+}
+
 /**
  * Frees all resources used by the context
  */
-ECDLCudaContext::~ECDLCudaContext()
+RhoCUDA::~RhoCUDA()
 {
     if(_initialized) {
         uninitializeDevice();
@@ -644,7 +640,7 @@ ECDLCudaContext::~ECDLCudaContext()
 /**
  * Reads the flag from the GPU indicating if a point was found
  */
-bool ECDLCudaContext::pointFound()
+bool RhoCUDA::pointFound()
 {
     unsigned int flag = 0;
     CUDA::memcpy(&flag, _devPointFoundFlag, 4, cudaMemcpyDeviceToHost);
@@ -656,127 +652,135 @@ bool ECDLCudaContext::pointFound()
     return false;
 }
 
+bool RhoCUDA::doStep()
+{
+    //do {
+    cudaError_t cudaError = cudaSuccess;
+
+    cudaError = cudaDoStep(_blocks,
+        _threadsPerBlock,
+        _devX,
+        _devY,
+        _devDiffBuf,
+        _devChainBuf,
+        _devPointFoundFlag,
+        _sectionFlags,
+        _pointFoundFlags,
+        _totalPoints,
+        _pointsInParallel);
+    
+    if(cudaError != cudaSuccess) {
+        Logger::logError("CUDA error: %s\n", cudaGetErrorString(cudaError));
+        return false;
+    }
+
+    _mainCounter++;
+
+    if(pointFound()) {
+        for(unsigned int section = 0; section < totalSections(); section++) {
+            if(!_sectionFlags[section]) {
+                continue;
+            }
+
+            _sectionFlags[section] = 0;
+
+            for(unsigned int i = 0; i < 32; i++) {
+
+                unsigned int index = (section * 32) + i;
+
+                // Check if a point was found
+                if(!_pointFoundFlags[index]) {
+                    continue;
+                }
+                _pointFoundFlags[index] = 0;
+
+                unsigned int x[_pWords];
+                unsigned int y[_pWords];
+                unsigned int a[_pWords];
+                unsigned int b[_pWords];
+
+                memset(x, 0, _pWords * sizeof(unsigned int));
+                memset(y, 0, _pWords * sizeof(unsigned int));
+                memset(a, 0, _pWords * sizeof(unsigned int));
+                memset(b, 0, _pWords * sizeof(unsigned int));
+
+                readXFromDevice(index, x);
+                readYFromDevice(index, y);
+                extractBigInt(_aStart, index, a);
+                extractBigInt(_bStart, index, b);
+
+                BigInteger xBig(x, _pWords);
+                BigInteger yBig(y, _pWords);
+                BigInteger aBig(a, _pWords);
+                BigInteger bBig(b, _pWords);
+                if(!verifyPoint(xBig, yBig)) {
+                    Logger::logError( "==== INVALID POINT ====\n" );
+                    printf("Index: %d\n", index);
+                    Logger::logError("%s %s\n", aBig.toString(16).c_str(), bBig.toString(16).c_str());
+                    Logger::logError("[%s, %s]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
+                    printf("a: ");
+                    printBigInt(a, _pWords);
+                    printf("b: ");
+                    printBigInt(b, _pWords);
+                    printf("x: ");
+                    printBigInt(x, _pWords);
+                    printf("y: ");
+                    printBigInt(y, _pWords);
+                    return false;
+                }
+             
+                struct CallbackParameters p;
+                p.aStart = aBig;
+                p.bStart = bBig;
+                p.x = xBig;
+                p.y = yBig;
+                p.length = (unsigned int)(_mainCounter - _counters[index]);
+
+                _callback(&p);
+                
+                unsigned int newX[_pWords];
+                unsigned int newY[_pWords];
+                unsigned int newA[_pWords];
+                unsigned int newB[_pWords]; 
+                getRandomPoint(newX, newY, newA, newB);
+                
+                // Write a, b to host memory
+                splatBigInt(newA, _aStart, index);
+                splatBigInt(newB, _bStart, index);
+
+                // Write x, y to device memory
+                writeXToDevice( newX, index );
+                writeYToDevice( newY, index );
+
+                _counters[index] = _mainCounter;
+            }
+        }
+    }
+
+    return true;
+
+    //running = isRunning();
+    //iterations++;
+    //}while( running );
+}
+
 /**
  * Runs the context
  */
-bool ECDLCudaContext::run()
+bool RhoCUDA::run()
 {
-    unsigned long long iterations = 0;
-    bool running = true;
-
     setRunFlag(true);
 
     do {
-        cudaError_t cudaError = cudaSuccess;
-        cudaError = doStep(_blocks,
-            _threadsPerBlock,
-            _devX,
-            _devY,
-            _devDiffBuf,
-            _devChainBuf,
-            _devPointFoundFlag,
-            _sectionFlags,
-            _pointFoundFlags,
-            _totalPoints,
-            _pointsInParallel);
-        
-        if(cudaError != cudaSuccess) {
-            Logger::logError("CUDA error: %s\n", cudaGetErrorString(cudaError));
-            break;
+        if(!doStep()) {
+            return false;
         }
-
-        _mainCounter++;
-
-        if(pointFound()) {
-            for(unsigned int section = 0; section < totalSections(); section++) {
-                if(!_sectionFlags[section]) {
-                    continue;
-                }
-
-                _sectionFlags[section] = 0;
-
-                for(unsigned int i = 0; i < 32; i++) {
-
-                    unsigned int index = (section * 32) + i;
-
-                    // Check if a point was found
-                    if(!_pointFoundFlags[index]) {
-                        continue;
-                    }
-                    _pointFoundFlags[index] = 0;
-
-                    unsigned int x[_pWords];
-                    unsigned int y[_pWords];
-                    unsigned int a[_pWords];
-                    unsigned int b[_pWords];
-
-                    memset(x, 0, _pWords * sizeof(unsigned int));
-                    memset(y, 0, _pWords * sizeof(unsigned int));
-                    memset(a, 0, _pWords * sizeof(unsigned int));
-                    memset(b, 0, _pWords * sizeof(unsigned int));
-
-                    readXFromDevice(index, x);
-                    readYFromDevice(index, y);
-                    extractBigInt(_aStart, index, a);
-                    extractBigInt(_bStart, index, b);
-
-                    BigInteger xBig(x, _pWords);
-                    BigInteger yBig(y, _pWords);
-                    BigInteger aBig(a, _pWords);
-                    BigInteger bBig(b, _pWords);
-                    if(!verifyPoint(xBig, yBig)) {
-                        Logger::logError( "==== INVALID POINT ====\n" );
-                        printf("Index: %d\n", index);
-                        Logger::logError("%s %s\n", aBig.toString(16).c_str(), bBig.toString(16).c_str());
-                        Logger::logError("[%s, %s]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
-                        printf("a: ");
-                        printBigInt(a, _pWords);
-                        printf("b: ");
-                        printBigInt(b, _pWords);
-                        printf("x: ");
-                        printBigInt(x, _pWords);
-                        printf("y: ");
-                        printBigInt(y, _pWords);
-                        return false;
-                    }
-                 
-                    struct CallbackParameters p;
-                    p.aStart = aBig;
-                    p.bStart = bBig;
-                    p.x = xBig;
-                    p.y = yBig;
-                    p.length = (unsigned int)(_mainCounter - _counters[index]);
-
-                    _callback(&p);
-                    
-                    unsigned int newX[_pWords];
-                    unsigned int newY[_pWords];
-                    unsigned int newA[_pWords];
-                    unsigned int newB[_pWords]; 
-                    getRandomPoint(newX, newY, newA, newB);
-                    
-                    // Write a, b to host memory
-                    splatBigInt(newA, _aStart, index);
-                    splatBigInt(newB, _bStart, index);
-
-                    // Write x, y to device memory
-                    writeXToDevice( newX, index );
-                    writeYToDevice( newY, index );
-
-                    _counters[index] = _mainCounter;
-                }
-            }
-        }
-
-
-        running = isRunning();
-        iterations++;
-    }while( running );
+    }while(isRunning());
 
     return true;
 }
 
-bool ECDLCudaContext::benchmark(unsigned long long *pointsPerSecondPtr)
+bool RhoCUDA::benchmark(unsigned long long *pointsPerSecondPtr)
 {
     unsigned int t0 = 0;
     unsigned int t1 = 0;
@@ -821,7 +825,7 @@ bool ECDLCudaContext::benchmark(unsigned long long *pointsPerSecondPtr)
     for(unsigned int i = 0; i < count; i++) {
         cudaError_t cudaError = cudaSuccess;
         
-        cudaError = doStep(_blocks,
+        cudaError = cudaDoStep(_blocks,
             _threadsPerBlock,
             _devX,
             _devY,

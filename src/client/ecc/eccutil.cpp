@@ -21,11 +21,11 @@ void generateRPoints(ECCurve &curve, ECPoint &q, BigInteger *aAra, BigInteger *b
         BigInteger b = randomBigInteger(BigInteger(2), order);
 
         // Multiply G and Q
-        r1 = curve.multiplyPoint(a, g);
-        r2 = curve.multiplyPoint(b, q);
+        r1 = curve.multiply(a, g);
+        r2 = curve.multiply(b, q);
 
         // Add the two points
-        r3 = curve.addPoint(r1, r2);
+        r3 = curve.add(r1, r2);
 
         xAra[ i ] = r3.getX();
         yAra[ i ] = r3.getY();

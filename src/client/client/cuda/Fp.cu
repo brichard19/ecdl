@@ -223,7 +223,6 @@ template<int N> __device__ void writeBigInt(unsigned int *ara, int idx, const un
 
 template<int N> __device__ unsigned int equalTo(const unsigned int *a, const unsigned int *b)
 {
-    /*
     for(int i = 0; i < N; i++) {
         if(a[i] != b[i]) {
             return 0;
@@ -231,8 +230,8 @@ template<int N> __device__ unsigned int equalTo(const unsigned int *a, const uns
     }
 
     return 1;
-    */
 
+    /*
     unsigned int result = 0xffffffff;
     for(int i = 0; i < N; i++) {
         unsigned int eq = 0;
@@ -241,6 +240,7 @@ template<int N> __device__ unsigned int equalTo(const unsigned int *a, const uns
     }
 
     return result;
+    */
 }
 
 template<int N> __device__ void rightShift(const unsigned int *in, unsigned int *out)
@@ -299,14 +299,10 @@ template<int N> __device__ void subModP(const unsigned int *a, const unsigned in
  */
 template<int N> __device__ void reduceModP(const unsigned int *x, unsigned int *c)
 {
-    //unsigned int x[N*2];
     unsigned int xHigh[N];
     unsigned int xm[N*2];
     unsigned int q[N];
     unsigned int qp[N*2];
-
-    // Compute 2N product
-    //multiply<N>(a, b, x);
 
     // Get top N bits
     rightShift<N>(x, xHigh);
@@ -319,7 +315,7 @@ template<int N> __device__ void reduceModP(const unsigned int *x, unsigned int *
 
     // It is possible that m is 1 bit longer than p. If p ends on a word boundry then m will
     // be 1 word longer than p. To avoid doing an extra multiplication when doing xHigh * m
-    // (because the 1 would be in a separate word), add xHigh to the result after shifting
+    // (because the 1 would be in the next word), add xHigh to the result after shifting
     if(_MWORDS > _PWORDS) {
         add<N>(q, xHigh, q);
     }

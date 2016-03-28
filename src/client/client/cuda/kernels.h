@@ -31,9 +31,9 @@ cudaError_t multiplyAddG( int blocks,
                           unsigned int *ry,
                           unsigned int *diffBuf,
                           unsigned int *chainBuf,
-                          int step,
                           unsigned int totalPoints,
-                          unsigned int pointsInParallel );
+                          unsigned int pointsInParallel,
+                          int step );
 
 cudaError_t resetPoints( int blocks,
                          int threads,
@@ -41,7 +41,7 @@ cudaError_t resetPoints( int blocks,
                          unsigned int *ry,
                          int count );
 
-cudaError_t doStep( int blocks,
+cudaError_t cudaDoStep( int blocks,
                     int threads,
                     unsigned int *rx,
                     unsigned int *ry,

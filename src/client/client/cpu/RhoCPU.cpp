@@ -18,9 +18,9 @@ void RhoCPU::generateStartingPoint(BigInteger &x, BigInteger &y, BigInteger &a, 
         b = randomBigInteger(2, _params.n);
 
         // aG, bQ, aG + bQ
-        ECPoint p1 = _curve.multiplyPoint(a, _g);
-        ECPoint p2 = _curve.multiplyPoint(b, _q);
-        ECPoint p3 = _curve.addPoint(p1, p2);
+        ECPoint p1 = _curve.multiply(a, _g);
+        ECPoint p2 = _curve.multiply(b, _q);
+        ECPoint p3 = _curve.add(p1, p2);
 
         x = p3.getX();
         y = p3.getY();
@@ -50,19 +50,7 @@ RhoCPU::RhoCPU(const ECDLPParams *params,
 {
     // Copy parameters
     _params = *params;
-    /*
-    typedef struct {
-    BigInteger p;
-    BigInteger a;
-    BigInteger b;
-    BigInteger n;
-    BigInteger gx;
-    BigInteger gy;
-    BigInteger qx;
-    BigInteger qy;
-    unsigned int dBits;
-}ECDLPParams;
-*/
+
     _fp = getFp(_params.p);
     _pLen = _params.p.getWordLength();
 

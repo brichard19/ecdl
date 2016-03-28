@@ -26,7 +26,7 @@ ECCurve::ECCurve( BigInteger p, BigInteger n, BigInteger a, BigInteger b, BigInt
     _bpy = bpy;
 }
 
-ECPoint ECCurve::addPoint( ECPoint &p, ECPoint &q )
+ECPoint ECCurve::add( ECPoint &p, ECPoint &q )
 {
     BigInteger rx;
     BigInteger ry;
@@ -37,7 +37,7 @@ ECPoint ECCurve::addPoint( ECPoint &p, ECPoint &q )
 
     // Px == Qx && Py == Qy
     if( p == q ) {
-        return doublePoint( p );
+        return doubl( p );
     }
 
     // Px == Qx && Py != Qy
@@ -67,7 +67,7 @@ ECPoint ECCurve::addPoint( ECPoint &p, ECPoint &q )
     return ECPoint( rx, ry );
 }
 
-ECPoint ECCurve::doublePoint( ECPoint &p )
+ECPoint ECCurve::doubl( ECPoint &p )
 {
     if( p.isPointAtInfinity() ) {
         return p;
@@ -94,7 +94,7 @@ ECPoint ECCurve::doublePoint( ECPoint &p )
     return ECPoint( rx, ry );
 }
 
-ECPoint ECCurve::multiplyPoint( BigInteger &k, ECPoint &p )
+ECPoint ECCurve::multiply( BigInteger &k, ECPoint &p )
 {
     BigInteger m = k;
     ECPointJacobian q = toJacobian( p );
@@ -234,5 +234,5 @@ ECPointJacobian ECCurve::addJacobian( ECPointJacobian &p1, ECPointJacobian &p2 )
     // Z' = H*Z1*Z2
     BigInteger newZ = (h * z1 * z2) % _p;
 
-    return ECPointJacobian( newX, newY, newZ );
+    return ECPointJacobian(newX, newY, newZ);
 }

@@ -292,7 +292,7 @@ cudaError_t setNumDistinguishedBits(unsigned int dBits)
 
 
 /**
- * Subtract 2 from an integer
+ * Subtract 2 from a big integer
  */
 static void sub2(const unsigned int *a, unsigned int *c, int len)
 {
@@ -314,18 +314,24 @@ static void sub2(const unsigned int *a, unsigned int *c, int len)
     }
 }
 
-static void shiftLeft(const unsigned int *a, int shift, unsigned int *c, int len)
+/**
+ * Shift a big integer left by n bits
+ */
+static void shiftLeft(const unsigned int *a, int n, unsigned int *c, int len)
 {
     unsigned int out = 0;
     unsigned int in = 0;
     for(int i = 0; i < len; i++) {
-        out = a[i] >> (32 - shift);
-        c[i] = a[i] << shift;
+        out = a[i] >> (32 - n);
+        c[i] = a[i] << n;
         c[i] |= in;
         in = out;
     }
 }
 
+/**
+ * Add two big integers
+ */
 static void addInt(const unsigned int *a, const unsigned int *b, unsigned int *c, int len)
 {
     unsigned int carryIn = 0;
@@ -443,7 +449,7 @@ end:
 }
 
 /**
- * Copy a, b, Rx and Ry to global memory
+ * Copy a, b, Rx and Ry to constant memory
  */
 cudaError_t copyRPointsToDevice(const unsigned int *rx, const unsigned int *ry, int length, int count)
 {
@@ -471,7 +477,7 @@ cudaError_t multiplyAddG( int blocks, int threads,
                           const unsigned int *gqx, const unsigned int *gqy,
                           unsigned int *x, unsigned int *y,
                           unsigned int *diffBuf, unsigned int *chainBuf,
-                          int step, unsigned int totalPoints, unsigned int pointsInParallel )
+                          unsigned int totalPoints, unsigned int pointsInParallel, int step)
 {
     startingPointGenKernel<<<blocks, threads>>>(a, b, gx, gy, qx, qy, gqx, gqy, x, y, diffBuf, chainBuf, step, totalPoints, pointsInParallel);
     return cudaDeviceSynchronize();
@@ -494,7 +500,7 @@ void __device__ cuPrintBigInt(const unsigned int *x, int len)
     printf("\n");
 }
 
-template<int N> __device__ void doStep(
+template<int N> __device__ void doStepMulti(
                             unsigned int *xAra,
                             unsigned int *yAra,
                             unsigned int *diffBuf,
@@ -626,25 +632,25 @@ __global__ void doStepKernel( unsigned int *xAra,
 
         switch(_PWORDS) {
             case 2:
-            doStep<2>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<2>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
             case 3:
-            doStep<3>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<3>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
             case 4:
-            doStep<4>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<4>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
             case 5:
-            doStep<5>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<5>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
             case 6:
-            doStep<6>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<6>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
             case 7:
-            doStep<7>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<7>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
             case 8:
-            doStep<8>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
+            doStepMulti<8>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
             break;
         }
     }
@@ -664,7 +670,7 @@ end:
     return cudaSuccess;
 }
 
-cudaError_t doStep( int blocks,
+cudaError_t cudaDoStep( int blocks,
                     int threads,
                     unsigned int *rx,
                     unsigned int *ry,

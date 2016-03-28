@@ -6,8 +6,11 @@
 #include "ECDLContext.h"
 #include "cudapp.h"
 
-class ECDLCudaContext : public ECDLContext {
+#define NUM_R_POINTS 32
 
+//class ECDLCudaContext : public ECDLContext {
+
+class RhoCUDA {
 private:
     unsigned long long _mainCounter;
     bool _runFlag;
@@ -63,6 +66,7 @@ private:
     
     void (*_callback)(struct CallbackParameters *);
 
+    // Copying data to/from device
     void readXFromDevice(unsigned int index, unsigned int *x);
     void readYFromDevice(unsigned int index, unsigned int *y);
     void readAFromDevice(unsigned int index, unsigned int *a);
@@ -71,25 +75,30 @@ private:
     void writeYToDevice(unsigned int *y, unsigned int index);
     void writeAToDevice(unsigned int *a, unsigned int index);
     void writeBToDevice(unsigned int *b, unsigned int index);
-    void generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy);
     void splatBigInt(const unsigned int *x, unsigned int *ara, int index );
     void extractBigInt(const unsigned int *ara, int index, unsigned int *x);
-
-    void generateExponentsHost();
     void writeBigIntToDevice(const unsigned int *x, unsigned int *dest, unsigned int index );
     void readBigIntFromDevice(const unsigned int *src, unsigned int index, unsigned int *x);
+
+    // Initializaton
+    void generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy);
+
+    void generateExponentsHost();
     void generateStartingPoints();
     void allocateBuffers();
     void freeBuffers();
+    void setupDeviceConstants();
+
     void uninitializeDevice();
     bool initializeDevice();
     bool getFlag();
     void getRandomPoint(unsigned int *x, unsigned int *y, unsigned int *a, unsigned int *b);
-    void setupDeviceConstants();
     bool verifyPoint(BigInteger &x, BigInteger &y);
     void setRunFlag(bool flag);
     void setRPoints();
     bool pointFound();
+
+    bool doStep();
 
     inline unsigned int totalThreads()
     {
@@ -102,6 +111,58 @@ private:
     }
 
 public:
+    //ECDLCudaContext( int device,
+    RhoCUDA( int device,
+                       unsigned int blocks,
+                       unsigned int threads,
+                       unsigned int totalPoints,
+                       unsigned int pointsInParallel,
+                       const ECDLPParams *params,
+                       const BigInteger *rx,
+                       const BigInteger *ry,
+                       int rPoints,
+                       void (*callback)(struct CallbackParameters *));
+
+    //virtual ~ECDLCudaContext();
+    ~RhoCUDA();
+    bool init();
+    void reset();
+    bool run();
+    bool stop();
+    bool isRunning();
+
+    // Debug code
+    bool benchmark(unsigned long long *pointsPerSecond);
+};
+
+
+class ECDLCudaContext : public ECDLContext {
+
+private:
+    RhoCUDA *_rho;
+    ECDLPParams _params;
+    ECCurve _curve;
+    void (*_callback)(struct CallbackParameters *);
+
+    BigInteger _rx[NUM_R_POINTS];
+    BigInteger _ry[NUM_R_POINTS];
+
+    unsigned int _device;
+    unsigned int _blocks;
+    unsigned int _threads;
+    unsigned int _totalPoints;
+    int _pointsInParallel;
+    int _rPoints;
+
+public:
+
+    virtual ~ECDLCudaContext();
+    virtual bool init();
+    virtual void reset();
+    virtual bool run();
+    virtual bool stop();
+    virtual bool isRunning();
+
     ECDLCudaContext( int device,
                        unsigned int blocks,
                        unsigned int threads,
@@ -113,13 +174,6 @@ public:
                        int rPoints,
                        void (*callback)(struct CallbackParameters *));
 
-    virtual ~ECDLCudaContext();
-    virtual bool init();
-    virtual bool run();
-    virtual bool stop();
-    virtual bool isRunning();
-
-    // Debug code
     virtual bool benchmark(unsigned long long *pointsPerSecond);
 };
 

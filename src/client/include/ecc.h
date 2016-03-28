@@ -66,9 +66,9 @@ public:
     ECCurve(BigInteger p, BigInteger n, BigInteger a, BigInteger b, BigInteger bpx, BigInteger bpy);
     ECPoint getBasepoint();
 
-    ECPoint addPoint(ECPoint &p, ECPoint &q);
-    ECPoint doublePoint(ECPoint &p);
-    ECPoint multiplyPoint(BigInteger &k, ECPoint &p);
+    ECPoint add(ECPoint &p, ECPoint &q);
+    ECPoint doubl(ECPoint &p);
+    ECPoint multiply(BigInteger &k, ECPoint &p);
     ECPointJacobian toJacobian(ECPoint &p);
     ECPoint toAffine(ECPointJacobian &p);
     ECPointJacobian addJacobian(ECPointJacobian &p, ECPointJacobian &q);
