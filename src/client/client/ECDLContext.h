@@ -3,6 +3,8 @@
 
 #define NUM_R_POINTS 32
 
+#include "BigInteger.h"
+
 /**
  Parameters passed to the callback when a distinguished point is found
  */

@@ -5,10 +5,9 @@
 #include <stdlib.h>
 
 #include "logger.h"
-#include "ECDLCuda.h"
+#include "RhoCUDA.h"
 #include "kernels.h"
 #include "ecc.h"
-#include "BigInteger.h"
 #include "util.h"
 #include "cudapp.h"
 

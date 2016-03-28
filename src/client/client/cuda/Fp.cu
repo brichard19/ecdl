@@ -223,15 +223,6 @@ template<int N> __device__ void writeBigInt(unsigned int *ara, int idx, const un
 
 template<int N> __device__ unsigned int equalTo(const unsigned int *a, const unsigned int *b)
 {
-    for(int i = 0; i < N; i++) {
-        if(a[i] != b[i]) {
-            return 0;
-        }
-    }
-
-    return 1;
-
-    /*
     unsigned int result = 0xffffffff;
     for(int i = 0; i < N; i++) {
         unsigned int eq = 0;
@@ -240,7 +231,6 @@ template<int N> __device__ unsigned int equalTo(const unsigned int *a, const uns
     }
 
     return result;
-    */
 }
 
 template<int N> __device__ void rightShift(const unsigned int *in, unsigned int *out)

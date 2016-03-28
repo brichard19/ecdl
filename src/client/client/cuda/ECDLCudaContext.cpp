@@ -73,6 +73,10 @@ bool ECDLCudaContext::isRunning()
 
 bool ECDLCudaContext::benchmark(unsigned long long *pointsPerSecond)
 {
+    if (_rho != NULL) {
+        throw std::string("Cannot run benchmark. GPU is currently busy");
+    }
+
     RhoCUDA *r = new RhoCUDA(_device, _blocks, _threads, _totalPoints, _pointsInParallel, &_params, _rx, _ry, _rPoints, _callback);
 
     r->init();
