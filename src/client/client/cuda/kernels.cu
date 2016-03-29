@@ -76,7 +76,7 @@ __device__ void initSharedMem(unsigned int len)
     __syncthreads();
 }
 
-template<int N> __device__ void doMultiplication( const unsigned int *aMultiplier, const unsigned int *bMultiplier,
+template<int N> __device__ void doMultiplyStep( const unsigned int *aMultiplier, const unsigned int *bMultiplier,
                                   const unsigned int *gx, const unsigned int *gy,
                                   const unsigned int *qx, const unsigned int *qy,
                                   const unsigned int *gqx, const unsigned int *gqy,
@@ -226,25 +226,25 @@ __global__ void startingPointGenKernel( const unsigned int *a, const unsigned in
 
         switch(_PWORDS) {
             case 2:
-            doMultiplication<2>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<2>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break; 
             case 3:
-            doMultiplication<3>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<3>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break;
             case 4:
-            doMultiplication<4>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<4>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break;
             case 5:
-            doMultiplication<5>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<5>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break;
             case 6:
-            doMultiplication<6>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<6>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break;
             case 7:
-            doMultiplication<7>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<7>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break;
             case 8:
-            doMultiplication<8>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
+            doMultiplyStep<8>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
             break;
         }
     }
@@ -500,6 +500,7 @@ void __device__ cuPrintBigInt(const unsigned int *x, int len)
     printf("\n");
 }
 
+
 template<int N> __device__ void doStepMulti(
                             unsigned int *xAra,
                             unsigned int *yAra,
@@ -521,7 +522,6 @@ template<int N> __device__ void doStepMulti(
     if( blockIdx.x == 0 && threadIdx.x == 0 ) {
         *pointFound = 0;
     }
-    
 
     // Multiply differences together
     for(int i = 0; i < pointsInParallel; i++) {
