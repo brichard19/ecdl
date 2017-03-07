@@ -39,6 +39,11 @@ __constant__ unsigned int _MBITS_CONST;
 
 __constant__ unsigned int _NUM_POINTS;
 
+template<int N> __device__ int getIndex(int idx)
+{
+    return N * (gridDim.x * blockDim.x * idx + blockIdx.x * blockDim.x + threadIdx.x);
+}
+
 template<int N> __device__ void add(const unsigned int *a, const unsigned int *b, unsigned int *c)
 {
     // No carry in
@@ -77,6 +82,7 @@ template<int N> __device__ unsigned int sub(const unsigned int *a, const unsigne
  */
 template<int N> __device__ void multiply(const unsigned int *a, const unsigned int *b, unsigned int *c)
 {
+    
     // Compute low 32-bits of each 64-bit product
     for(int i = 0; i < N; i++) {
         c[i] = a[0] * b[i];
@@ -91,8 +97,7 @@ template<int N> __device__ void multiply(const unsigned int *a, const unsigned i
     }
 
     asm volatile( "madc.hi.u32 %0, %1, %2, %3;\n\t" : "=r"(c[N]) : "r"(a[ 0 ]), "r"(b[ N-1 ]), "r"(c[N]));
-
-
+    
     for(int i = 1; i < N; i++) {
         unsigned int t = a[i];
         asm volatile( "mad.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[i]) : "r"(t), "r"(b[0]), "r"(c[i]));
@@ -112,66 +117,13 @@ template<int N> __device__ void multiply(const unsigned int *a, const unsigned i
     }
 }
 
+
 /**
  * Squares an N-word value
  */
 template<int N> __device__ void square(const unsigned int *a, unsigned int *c)
 {
     multiply<N>(a, a, c);
-   
-    /*
-    
-    for(int i = 0; i < 2*N; i++) {
-        c[i] = 0;
-    }
-
-    unsigned int x;
-    unsigned int y;
-
-    for(int i = 0; i < N - 1; i++) {
-
-        x = a[i];
-        y = a[i + 1];
-        asm volatile( "mad.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * i + 0 + 1]) : "r"(x), "r"(y), "r"(c[2 * i + 0 + 1]) );
-        asm volatile( "madc.hi.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * i + 0 + 2]) : "r"(x), "r"(y), "r"(c[2 * i + 0 + 2]) );
-        //for(int j = i + 1; j < N; j++) {
-        //for(int j = 1; j < N - i - 1; j++) {
-        for(int j = 1; j < N - i; j++) {
-            //y = a[i + j + 1];
-            y = a[i + j + 1];
-            asm volatile( "madc.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * i + j + 1]) : "r"(x), "r"(y), "r"(c[2 * i + j + 1]) );
-            asm volatile( "madc.hi.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * i + j + 2]) : "r"(x), "r"(y), "r"(c[2 * i + j + 2]) );
-        }
-
-        y = a[N-1];
-        asm volatile( "madc.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * i + N + 1]) : "r"(x), "r"(y), "r"(c[2 * i + N + 1]) );
-        asm volatile( "madc.hi.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * i + N + 2]) : "r"(x), "r"(y), "r"(c[2 * i + N + 2]) );
-    }
-
-    */
-    /*
-    // Multiply by 2 by adding result to itself
-    asm volatile( "add.cc.u32 %0, %1, %2;\n\t" : "=r"(c[0]) : "r"(c[0]), "r"(c[0]) );
-    for(int i = 1; i < (2*N)-1; i++) {
-        asm volatile( "addc.cc.u32 %0, %1, %2;\n\t" : "=r"(c[i]) : "r"(c[i]), "r"(c[i]) );
-    }
-    asm volatile( "addc.u32 %0, %1, %2;\n\t" : "=r"(c[2*N-1]) : "r"(c[2*N-1]), "r"(c[2*N-1]) );
-
-    // Add the square of each term
-    x = a[0];
-    asm volatile( "mad.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[0]) : "r"(x), "r"(x), "r"(c[0]) );
-    asm volatile( "madc.hi.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[1]) : "r"(x), "r"(x), "r"(c[1]) );
-
-    for(int i = 1; i < N-1; i++) {
-        x = a[i];
-        asm volatile( "madc.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2*i]) : "r"(x), "r"(x), "r"(c[2 * i]) );
-        asm volatile( "madc.hi.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2*i+1]) : "r"(x), "r"(x), "r"(c[2 * i + 1]) );
-    } 
-   
-    x = a[N-1]; 
-    asm volatile( "madc.lo.cc.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2*N-2]) : "r"(x), "r"(x), "r"(c[2*N-2]) );
-    asm volatile( "madc.hi.u32 %0, %1, %2, %3;\n\t" : "=r"(c[2 * N -1]) : "r"(x), "r"(x), "r"(c[2*N - 1]) );
-    */
 }
 
 /**
@@ -192,9 +144,8 @@ __device__ void initFp()
 
 template<int N> __device__ void readBigInt(const unsigned int *ara, int idx, unsigned int *x)
 {
-    #pragma unroll
     for(int i = 0; i < N; i++ ) {
-        x[ i ] = ara[ _NUM_POINTS * i + idx ];
+        x[i] = ara[getIndex<N>(idx) + i];
     }
 }
 
@@ -203,21 +154,21 @@ template<int N> __device__ void readBigInt(const unsigned int *ara, int idx, uns
  */
 template<int N> __device__ unsigned int readBigIntWord(const unsigned int *ara, int idx, int word)
 {
-    return ara[_NUM_POINTS * word + idx];
+    return ara[getIndex<N>(idx) + word];
 }
+
 
 __device__ void writeBigInt(unsigned int *ara, int idx, const unsigned int *x, int len)
 {
     for(int i = 0; i < len; i++) {
-        ara[_NUM_POINTS * i + idx ] = x[ i ];
+        ara[len * (gridDim.x * blockDim.x * idx + blockIdx.x * blockDim.x + threadIdx.x) + i] = x[i];
     }
 }
 
 template<int N> __device__ void writeBigInt(unsigned int *ara, int idx, const unsigned int *x)
 {
-    #pragma unroll
     for(int i = 0; i < N; i++) {
-        ara[_NUM_POINTS * i + idx] = x[ i ];
+        ara[getIndex<N>(idx) + i] = x[i];
     }
 }
 
@@ -358,7 +309,7 @@ template<int N> __device__ void squareModP(const unsigned int *a, unsigned int *
 
 
 /**
- * Computes multiplicative inverse of a mod P using Fermat's little theorem (x^(P-2) mod P)
+ * Computes multiplicative inverse of a mod P using x^(P-2) mod P
  */
 template<int N> __device__ void inverseModP(const unsigned int *a, unsigned int *inverse)
 {
@@ -367,7 +318,8 @@ template<int N> __device__ void inverseModP(const unsigned int *a, unsigned int 
 
     unsigned int y[N] = {0};
     y[0] = 1;
-   
+  
+    // First N -1 words in the exponent 
     for(int j = 0; j < N-1; j++) {
         unsigned int e = _PMINUS2[j];
         for(int i = 0; i < 32; i++) {
@@ -380,6 +332,7 @@ template<int N> __device__ void inverseModP(const unsigned int *a, unsigned int 
         }
     }
 
+    // Last word in the exponent
     unsigned int e = _PMINUS2[N-1];
     while( e ) {
         if( e & 1 ) {

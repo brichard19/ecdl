@@ -186,8 +186,8 @@ bool ECDLCpuContext::benchmark(unsigned long long *pointsPerSecondOut)
         pointsPerSecond += params[i]->iterationsPerSecond * _pointsPerThread;
     }
 
-    printf("%lld iterations per second\n", iterationsPerSecond);
-    printf("%lld points per second\n", pointsPerSecond);
+    Logger::logInfo("%lld iterations per second\n", iterationsPerSecond);
+    Logger::logInfo("%lld points per second\n", pointsPerSecond);
 
     if(pointsPerSecondOut) {
         *pointsPerSecondOut = pointsPerSecond;

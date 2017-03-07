@@ -9,8 +9,6 @@ import time
 import smtplib
 from email.mime.text import MIMEText
 
-NUM_R_POINTS = 32
-
 '''
 Inversion mod p using Fermat method
 '''
@@ -20,18 +18,6 @@ def invm(x, m):
 
 def swap(a, b):
     return b, a
-
-'''
-Converts a string to integer by guessing the base
-'''
-def parseInt(n):
-    return int(n, 0)
-
-def getContext(id):
-    if id in _ctx:
-        return _ctx[id]
-
-    return None
 
 class RhoSolver:
     point1 = None
@@ -87,7 +73,6 @@ class RhoSolver:
     folklore hero who could shoot a second arrow on the
     exact trajectory as the first.
     '''
-    #def _checkForRobinHood(curve, start, end, start2, rPoints):
     def _isRobinHood(self):
 
         currentPoint = self.point1
@@ -107,7 +92,6 @@ class RhoSolver:
     '''
     Gets the total length of the random walk
     '''
-    #def _getWalkLength(curve, startA, startB, startPoint, endPoint, rPoints, dBits):
     def _getWalkLength(self, startA, startB, startPoint):
 
         point = startPoint
@@ -304,7 +288,6 @@ def mainLoop():
                     solveNextCollision(ctx)
 
             # If anything is in the list, solve them
-            print( "Unsolved jobs: " + str(len(ctxList)))
             if len(ctxList) > 0:
                 for ctx in ctxList:
                     solveNextCollision(ctx)

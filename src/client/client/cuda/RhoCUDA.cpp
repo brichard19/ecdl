@@ -14,9 +14,9 @@
 void printBigInt(unsigned int *x, int len)
 {
     for(int i = len - 1; i>= 0; i--) {
-        printf("%.8x", x[i]);
+        Logger::logInfo("%.8x", x[i]);
     }
-    printf("\n");
+    Logger::logInfo("\n");
 }
 
 /**
@@ -45,15 +45,55 @@ bool RhoCUDA::stop()
     return true;
 }
 
-/**
- * Takes an integer array and 'splats' its contents into coalesced form that the GPU uses
- */
-void RhoCUDA::splatBigInt(const unsigned int *x, unsigned int *ara, int index)
+void RhoCUDA::cudaException(cudaError_t error)
 {
-    unsigned int numPoints = _totalPoints;
+    throw std::string(cudaGetErrorString(error));
+}
+/******************************************************************
+ MEMORY LAYOUT
 
-    for(unsigned int i = 0; i < _pWords; i++) {
-        ara[ numPoints * i + index ] = x[i];
+ The memory can be viewed as a 2D array where the number of columns is
+ equal the number of threads, and the number of rows is equal to the
+ number of points each thread processes in parallel. Each element
+ in the matrix is an n-word array.
+
+ [T0,0][T1,0]  ... [Tn,0]
+ [T0,1][T1,1]  ... [Tn,1]
+
+ ...
+ 
+ [T0,m][T1,m] ...  [Tn,m]
+
+
+ To compute the unique index for a value in memory, you need the thread number
+ and the index of the integer for that thread.
+
+ You can calculate the base address of the word array like this:
+
+ pWords * (numThreads * idx + threadId)
+
+ Where:
+ 
+ pWords is the length of the integer in words
+ 
+ numThreads is the total number of threads
+ 
+ idx is the index of the value
+
+ */
+
+unsigned int RhoCUDA::getIndex(unsigned int block, unsigned int thread, unsigned int idx)
+{
+    return _pWords * (_blocks * _threadsPerBlock * idx + block * _threadsPerBlock + thread);
+}
+
+/**
+ * Takes an integer array and 'splats' its contents into the format that the GPU uses
+ */
+void RhoCUDA::splatBigInt(unsigned int *ara, const unsigned int *x, unsigned int block, unsigned int thread, unsigned int index)
+{
+    for(int i = 0; i < _pWords; i++) {
+        ara[getIndex(block, thread, index) + i] = x[i];
     }
 }
 
@@ -61,14 +101,45 @@ void RhoCUDA::splatBigInt(const unsigned int *x, unsigned int *ara, int index)
  * Performs the opposite of splatBigInt. Reads an integer from coalesced form
  * into an array.
  */
-void RhoCUDA::extractBigInt(const unsigned int *ara, int index, unsigned int *x)
+void RhoCUDA::extractBigInt(unsigned int *x, const unsigned int *ara, unsigned int block, unsigned int thread, unsigned int index)
 {
-    unsigned int numPoints = _totalPoints;
-
-    for(unsigned int i = 0; i < _pWords; i++) {
-        x[ i ] = ara[ numPoints * i + index ];
+    for(int i = 0; i < _pWords; i++) {
+        x[ i ] = ara[getIndex(block, thread, index) + i];
     }
 }
+
+void RhoCUDA::readX(unsigned int *x, unsigned int block, unsigned int thread, unsigned int index)
+{
+    readBigInt(x, _devX, block, thread, index);
+}
+
+void RhoCUDA::readY(unsigned int *y, unsigned int block, unsigned int thread, unsigned int index)
+{
+    readBigInt(y, _devY, block, thread, index);
+}
+
+void RhoCUDA::writeX(const unsigned int *x, unsigned int block, unsigned int thread, unsigned int index)
+{
+    writeBigInt(_devX, x, block, thread, index);
+}
+
+void RhoCUDA::writeY(const unsigned int *y, unsigned int block, unsigned int thread, unsigned int index)
+{
+    writeBigInt(_devY, y, block, thread, index);
+}
+
+
+void RhoCUDA::readBigInt(unsigned int *dest, const unsigned int *src, unsigned int block, unsigned int thread, unsigned int index)
+{
+    CUDA::memcpy(dest, &src[getIndex(block, thread, index)], _pWords * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+}
+
+void RhoCUDA::writeBigInt(unsigned int *dest, const unsigned int *src, unsigned int block, unsigned int thread, unsigned int index)
+{
+    CUDA::memcpy(&dest[getIndex(block, thread, index)], src, _pWords * sizeof(unsigned int), cudaMemcpyHostToDevice);
+}
+
+
 
 void RhoCUDA::setRPoints()
 {
@@ -108,13 +179,6 @@ void RhoCUDA::setupDeviceConstants()
     if(cudaError != cudaSuccess) {
         throw cudaError;
     }
-
-    cudaError = initDeviceConstants(_totalPoints);
-
-    if(cudaError != cudaSuccess) {
-        throw cudaError;
-    }
-
 }
 
 /**
@@ -160,22 +224,25 @@ void RhoCUDA::getRandomPoint(unsigned int *x, unsigned int *y, unsigned int *a, 
  */
 void RhoCUDA::generateExponentsHost()
 {
-    unsigned int numPoints = _totalPoints;
+    Logger::logInfo("Generating exponents");
+    for(unsigned int block = 0; block < _blocks; block++) {
+        for(unsigned int index = 0; index < _pointsPerThread; index++) {
+            for(unsigned int thread = 0; thread < _threadsPerBlock; thread++) {
+                // TODO: Use better RNG here
+                BigInteger a = randomBigInteger(1, _params.n);
+                BigInteger b = randomBigInteger(1, _params.n);
+                unsigned int aWords[_pWords];
+                unsigned int bWords[_pWords];
 
-    for(unsigned int index = 0; index < numPoints; index++) {
-        // TODO: Use better RNG here
-        BigInteger a = randomBigInteger(1, _params.n);
-        BigInteger b = randomBigInteger(1, _params.n);
-        unsigned int aWords[_pWords];
-        unsigned int bWords[_pWords];
+                memset(aWords, 0, _pWords * sizeof(unsigned int));
+                memset(bWords, 0, _pWords * sizeof(unsigned int));
 
-        memset(aWords, 0, _pWords * sizeof(unsigned int));
-        memset(bWords, 0, _pWords * sizeof(unsigned int));
-
-        a.getWords(aWords);
-        b.getWords(bWords);
-        splatBigInt(aWords, _aStart, index);
-        splatBigInt(bWords, _bStart, index);
+                a.getWords(aWords);
+                b.getWords(bWords);
+                splatBigInt(_aStart, aWords, block, thread, index);
+                splatBigInt(_bStart, bWords, block, thread, index);
+            }
+        }
     }
 }
 
@@ -201,11 +268,11 @@ void RhoCUDA::generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned i
     ECPoint sum = _curve.add(g, q);
 
     if(!_curve.pointExists(g)) {
-        printf("Error: G is not on the curve!\n");
+        Logger::logInfo("Error: G is not on the curve!\n");
     }
 
     if(!_curve.pointExists(q)) {
-        printf("Error: Q is not on the curve!\n");
+        Logger::logInfo("Error: Q is not on the curve!\n");
     }
 
     // Convert Gx, Gy to words
@@ -232,14 +299,14 @@ void RhoCUDA::generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned i
         sum = _curve.add(g, q);
 
         if(!_curve.pointExists(g)) {
-            printf("Error: G is not on the curve!\n");
+            Logger::logInfo("Error: G is not on the curve!\n");
         }
         if(!_curve.pointExists(q)) {
-            printf("Error: Q is not on the curve!\n");
+            Logger::logInfo("Error: Q is not on the curve!\n");
         }
     
         if(!_curve.pointExists(sum)) {
-            printf("Error: G + Q is not on the curve!\n");
+            Logger::logInfo("Error: G + Q is not on the curve!\n");
         }
 
         x = g.getX(); 
@@ -263,10 +330,11 @@ void RhoCUDA::generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned i
  * Generates a random set of starting points for the random walks. Each
  * GPU thread has a different starting point
  */
-void RhoCUDA::generateStartingPoints()
+void RhoCUDA::generateStartingPoints(bool doVerify)
 {   
     cudaError_t cudaError = cudaSuccess;
 
+    Logger::logInfo("Generating starting points\n");
     unsigned int gx[ _pBits * _pWords ];
     unsigned int gy[ _pBits * _pWords ];
     unsigned int qx[ _pBits * _pWords ];
@@ -284,6 +352,7 @@ void RhoCUDA::generateStartingPoints()
     unsigned int *devGQx = NULL;
     unsigned int *devGQy = NULL;
 
+    Logger::logInfo("Allocating device memory\n");
     // Allocate tables in device memory and copy them over
     try {
         unsigned int size = _pBits * _pWords * sizeof(unsigned int);
@@ -309,81 +378,97 @@ void RhoCUDA::generateStartingPoints()
     generateExponentsHost();
 
     // Reset points to point at infinity
-    resetPoints(_blocks, _threadsPerBlock, _devX, _devY, _totalPoints);
+    Logger::logInfo("Resetting points");
+    resetPoints(_blocks, _threadsPerBlock, _pointsPerThread, _devX, _devY);
 
     for(unsigned int i = 0; i < _pBits; i++) {
-        cudaError = multiplyAddG( _blocks, _threadsPerBlock,
+        cudaError = multiplyAddG( _blocks, _threadsPerBlock, _pointsPerThread,
                                   _devAStart, _devBStart,
                                   devGx, devGy,
                                   devQx, devQy,
                                   devGQx, devGQy,
                                   _devX, _devY,
                                   _devDiffBuf, _devChainBuf,
-                                  _totalPoints, _pointsInParallel, i);
+                                  i);
         if( cudaError != cudaSuccess ) {
+            Logger::logInfo("ERROR!\n");
             goto end;
         }
     }
+    Logger::logInfo("Done");
 
+    if(doVerify) {
+        // Verify all points are valid
+        Logger::logInfo("Verifying points...");
+        fflush(stdout);
+        for(int block = 0; block < _blocks; block++) {
+            for(int thread = 0; thread < _threadsPerBlock; thread++) {
 
-    for(unsigned int i = 0; i < _totalPoints; i++) {
-        unsigned int xTest[_pWords];
-        unsigned int yTest[_pWords];
-        unsigned int aTest[_pWords];
-        unsigned int bTest[_pWords];
+                for(int i = 0; i < _pointsPerThread; i++) {
+                    Logger::logInfo("%d %d %d", block, thread, i);
+                    unsigned int xTest[_pWords];
+                    unsigned int yTest[_pWords];
+                    unsigned int aTest[_pWords];
+                    unsigned int bTest[_pWords];
 
-        memset(xTest, 0, sizeof(unsigned int) * _pWords);
-        memset(yTest, 0, sizeof(unsigned int) * _pWords);
-        memset(aTest, 0, sizeof(unsigned int) * _pWords);
-        memset(bTest, 0, sizeof(unsigned int) * _pWords);
+                    memset(xTest, 0, sizeof(unsigned int) * _pWords);
+                    memset(yTest, 0, sizeof(unsigned int) * _pWords);
+                    memset(aTest, 0, sizeof(unsigned int) * _pWords);
+                    memset(bTest, 0, sizeof(unsigned int) * _pWords);
 
-        readXFromDevice(i, xTest);
-        readYFromDevice(i, yTest);
-        extractBigInt(_aStart, i, aTest);
-        extractBigInt(_bStart, i, bTest);
+                    readX(xTest, block, thread, i);
+                    readY(yTest, block, thread, i);
 
-        BigInteger xBig(xTest, _pWords);
-        BigInteger yBig(yTest, _pWords);
-        BigInteger aBig(aTest, _pWords);
-        BigInteger bBig(bTest, _pWords);
+                    extractBigInt(aTest, _aStart, block, thread, i);
+                    extractBigInt(bTest, _bStart, block, thread, i);
 
-        ECPoint g(_params.gx, _params.gy);
-        ECPoint q(_params.qx, _params.qy);
-         
-        ECPoint p(xBig, yBig);
+                    BigInteger xBig(xTest, _pWords);
+                    BigInteger yBig(yTest, _pWords);
+                    BigInteger aBig(aTest, _pWords);
+                    BigInteger bBig(bTest, _pWords);
 
-        ECPoint p1 = _curve.multiply(aBig, g);
-        ECPoint p2 = _curve.multiply(bBig, q);
-        ECPoint sum = _curve.add(p1, p2);
+                    ECPoint g(_params.gx, _params.gy);
+                    ECPoint q(_params.qx, _params.qy);
+                     
+                    ECPoint p(xBig, yBig);
 
-        if(!_curve.pointExists(p)) {
-            printf("Error: Point is NOT on curve!\n");
-            printf("%s\n%s\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
+                    ECPoint p1 = _curve.multiply(aBig, g);
+                    ECPoint p2 = _curve.multiply(bBig, q);
+                    ECPoint sum = _curve.add(p1, p2);
 
-            unsigned int a[_pWords];
-            unsigned int b[_pWords];
+                    if(!_curve.pointExists(p)) {
+                        Logger::logInfo("Error: Point is NOT on curve!\n");
+                        Logger::logInfo("Thread: %d index: %d\n", thread, i);
+                        Logger::logInfo("%s\n%s\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
 
-            extractBigInt(_aStart, 0, a);
-            extractBigInt(_bStart, 0, b);
-            printf("a: ");
-            printBigInt(a, _pWords);
-            printf("b: ");
-            printBigInt(b, _pWords);
+                        unsigned int a[_pWords];
+                        unsigned int b[_pWords];
+
+                        extractBigInt(a, _aStart, block, thread, i);
+                        extractBigInt(b, _bStart, block, thread, i);
+                        Logger::logInfo("a: ");
+                        printBigInt(a, _pWords);
+                        Logger::logInfo("b: ");
+                        printBigInt(b, _pWords);
+
+                    }
+
+                    if(sum.getX() != xBig || sum.getY() != yBig) {
+                        Logger::logInfo("INVALID STARTING POINT\n");
+                        Logger::logInfo("Thread: %d index: %d\n", thread, i);
+                        Logger::logInfo("a: %s\n", aBig.toString(16).c_str());
+                        Logger::logInfo("b: %s\n", bBig.toString(16).c_str());
+
+                        Logger::logInfo("Expected:\n");
+                        Logger::logInfo("[ %s, %s ]\n", sum.getX().toString(16).c_str(), sum.getY().toString(16).c_str());
+                        Logger::logInfo("Actual:\n");
+                        Logger::logInfo("[ %s, %s ]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
+                        throw "ERROR";
+                    }
+                }
+            }
 
         }
-
-        if(sum.getX() != xBig || sum.getY() != yBig) {
-            printf("INVALID STARTING POINT\n");
-            printf("a: %s\n", aBig.toString(16).c_str());
-            printf("b: %s\n", bBig.toString(16).c_str());
-
-            printf("Expected:\n");
-            printf("[ %s, %s ]\n", sum.getX().toString(16).c_str(), sum.getY().toString(16).c_str());
-            printf("Actual:\n");
-            printf("[ %s, %s ]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
-            throw "ERROR";
-        }
-
     }
 end:
     CUDA::free(devGx);
@@ -394,48 +479,10 @@ end:
     CUDA::free(devGQy);
 
     if(cudaError != cudaSuccess) {
-        throw cudaError;
+        cudaException(cudaError);
     }
 }
 
-void RhoCUDA::writeBigIntToDevice(const unsigned int *x, unsigned int *dest, unsigned int index )
-{
-    unsigned int numPoints = _totalPoints;
-
-    for(unsigned int i = 0; i < _pWords; i++) {
-        CUDA::memcpy(&dest[ numPoints * i + index ], &x[ i ], 4, cudaMemcpyHostToDevice);
-    }
-}
-
-
-void RhoCUDA::readBigIntFromDevice(const unsigned int *src, unsigned int index, unsigned int *x)
-{
-    unsigned int numPoints = _totalPoints;
-
-    for(unsigned int i = 0; i < _pWords; i++) {
-        CUDA::memcpy(&x[ i ], &src[ numPoints * i + index ], 4, cudaMemcpyDeviceToHost);
-    }
-}
-
-void RhoCUDA::readXFromDevice(unsigned int index, unsigned int *x)
-{
-    readBigIntFromDevice(_devX, index, x);
-}
-
-void RhoCUDA::readYFromDevice(unsigned int index, unsigned int *y)
-{
-    readBigIntFromDevice(_devY, index, y);
-}
-
-void RhoCUDA::writeXToDevice(unsigned int *x, unsigned int index)
-{
-    writeBigIntToDevice(x, _devX, index);
-}
-
-void RhoCUDA::writeYToDevice(unsigned int *y, unsigned int index)
-{
-    writeBigIntToDevice(y, _devY, index);
-}
 
 /**
  * Allocates memory on the host and device according to the number of threads, and
@@ -443,13 +490,13 @@ void RhoCUDA::writeYToDevice(unsigned int *y, unsigned int index)
  */
 void RhoCUDA::allocateBuffers()
 {
-    size_t numPoints = _totalPoints;
+    size_t numPoints = _numThreads * _pointsPerThread;
     size_t arraySize = sizeof(unsigned int) * _pWords * numPoints;
 
     Logger::logInfo("Allocating %ld bytes on device", arraySize * 4);
     Logger::logInfo("Allocating %ld bytes on host", arraySize * 2);
     Logger::logInfo("%d blocks", _blocks);
-    Logger::logInfo("%d threads (%d threads per block)", totalThreads(), _threadsPerBlock);
+    Logger::logInfo("%d threads (%d threads per block)", _numThreads, _threadsPerBlock);
     Logger::logInfo("%d points", numPoints);
 
     _counters = new unsigned long long[numPoints];
@@ -469,13 +516,17 @@ void RhoCUDA::allocateBuffers()
     // Map host memory to device address space
     _devBStart = (unsigned int *)CUDA::getDevicePointer(_bStart, 0);
 
+    // Each block gets a flag to notify that one of its threads found a distinguished point
+    _blockFlags = (unsigned int *)CUDA::hostAlloc(_blocks * sizeof(unsigned int), cudaHostAllocMapped);
+    memset(_blockFlags, 0, _blocks * sizeof(unsigned int));
+
+    _devBlockFlags = (unsigned int *)CUDA::getDevicePointer(_blockFlags, 0);
+
     // Each thread gets a flag to notify that it has found a distinguished point
     _pointFoundFlags = (unsigned int *)CUDA::hostAlloc(numPoints * sizeof(unsigned int), cudaHostAllocMapped);
     memset(_pointFoundFlags, 0, numPoints * sizeof(unsigned int));
 
-    // Each section gets a flag to notify if any threads in that block found a distinguished point
-    _sectionFlags = (unsigned int *)CUDA::hostAlloc(totalSections() * sizeof(unsigned int), cudaHostAllocMapped);
-    memset(_sectionFlags, 0, totalSections() * sizeof(unsigned int));
+    _devPointFoundFlags = (unsigned int *)CUDA::getDevicePointer(_pointFoundFlags, 0);
 
     // Allocate 'x' values in device memory
     _devX = (unsigned int *)CUDA::malloc(arraySize);
@@ -488,9 +539,6 @@ void RhoCUDA::allocateBuffers()
 
     // Allocate buffer to hold the multiplication chain when computing batch inverse
     _devChainBuf = (unsigned int *)CUDA::malloc(arraySize);
-
-    // Allocate integer to be used as a flag if a distinguished point is found
-    _devPointFoundFlag = (unsigned int *)CUDA::malloc(4);
 }
 
 /**
@@ -504,9 +552,8 @@ void RhoCUDA::freeBuffers()
     cudaFree(_devY);
     cudaFree(_devDiffBuf);
     cudaFree(_devChainBuf);
-    cudaFree(_devPointFoundFlag);
+    cudaFree(_blockFlags);
     cudaFree(_pointFoundFlags);
-    cudaFree(_sectionFlags);
 
     delete[] _counters;
 }
@@ -532,11 +579,7 @@ bool RhoCUDA::initializeDevice()
 {
     // Set current device
     CUDA::setDevice(_device);
-    
-    // Poll while kernel is running, but yield the thread if necessary
-    //CUDA::setDeviceFlags(cudaDeviceScheduleYield);
     CUDA::setDeviceFlags(cudaDeviceScheduleBlockingSync);
-    //cudaFuncSetCacheConfig(MyKernel, cudaFuncCachePreferL1);
 
     try {
         allocateBuffers();
@@ -563,10 +606,9 @@ void RhoCUDA::uninitializeDevice()
 /**
  * Creates a new context
  */
-RhoCUDA::RhoCUDA( int device, unsigned int blocks,
+RhoCUDA::RhoCUDA(int device, unsigned int blocks,
                                       unsigned int threads,
-                                      unsigned int totalPoints,
-                                      unsigned int pointsInParallel,
+                                      unsigned int pointsPerThread,
                                       const ECDLPParams *params,
                                       const BigInteger *rx,
                                       const BigInteger *ry,
@@ -576,8 +618,7 @@ RhoCUDA::RhoCUDA( int device, unsigned int blocks,
     _mainCounter = 1;
     _blocks = blocks;
     _threadsPerBlock = threads;
-    _totalPoints = totalPoints;
-    _pointsInParallel = pointsInParallel;
+    _pointsPerThread = pointsPerThread;
     _device = device;
     _callback = callback;
     _runFlag = true;
@@ -585,6 +626,7 @@ RhoCUDA::RhoCUDA( int device, unsigned int blocks,
     _numRPoints = numRPoints; 
     _params.p = params->p;
 
+    _numThreads = _blocks * _threadsPerBlock;
 
     // Initialize barrett reduction bits
     _pBits = _params.p.getBitLength();
@@ -612,7 +654,7 @@ bool RhoCUDA::init()
 {
     try { 
         initializeDevice();
-        generateStartingPoints();
+        generateStartingPoints(false);
     } catch(cudaError_t err) {
         Logger::logError("CUDA Error: %s\n", cudaGetErrorString(err));
         return false;
@@ -641,11 +683,10 @@ RhoCUDA::~RhoCUDA()
  */
 bool RhoCUDA::pointFound()
 {
-    unsigned int flag = 0;
-    CUDA::memcpy(&flag, _devPointFoundFlag, 4, cudaMemcpyDeviceToHost);
-
-    if(flag) {
-        return true; 
+    for(int i = 0; i < _blocks; i++) {
+        if(_blockFlags[i]) {
+            return true;
+        }
     }
 
     return false;
@@ -656,18 +697,17 @@ bool RhoCUDA::doStep()
     //do {
     cudaError_t cudaError = cudaSuccess;
 
-    cudaError = cudaDoStep(_blocks,
+    cudaError = cudaDoStep(_pWords,
+        _blocks,
         _threadsPerBlock,
+        _pointsPerThread,
         _devX,
         _devY,
         _devDiffBuf,
         _devChainBuf,
-        _devPointFoundFlag,
-        _sectionFlags,
-        _pointFoundFlags,
-        _totalPoints,
-        _pointsInParallel);
-    
+        _blockFlags,
+        _pointFoundFlags);
+   
     if(cudaError != cudaSuccess) {
         Logger::logError("CUDA error: %s\n", cudaGetErrorString(cudaError));
         return false;
@@ -675,23 +715,23 @@ bool RhoCUDA::doStep()
 
     _mainCounter++;
 
-    if(pointFound()) {
-        for(unsigned int section = 0; section < totalSections(); section++) {
-            if(!_sectionFlags[section]) {
-                continue;
-            }
+    for(unsigned int block = 0; block < _blocks; block++) {
 
-            _sectionFlags[section] = 0;
+        if(_blockFlags[block] == 0) {
+            continue;
+        }
 
-            for(unsigned int i = 0; i < 32; i++) {
+        _blockFlags[block] = 0;
 
-                unsigned int index = (section * 32) + i;
-
-                // Check if a point was found
-                if(!_pointFoundFlags[index]) {
+        for(unsigned int thread = 0; thread < _threadsPerBlock; thread++)
+        {
+            for(int i = 0; i < _pointsPerThread; i++)
+            {
+                if(_pointFoundFlags[_blocks * _threadsPerBlock * i + block * _threadsPerBlock + thread] == 0) {
                     continue;
                 }
-                _pointFoundFlags[index] = 0;
+
+                _pointFoundFlags[_blocks * _threadsPerBlock * i + block * _threadsPerBlock + thread] = 0;
 
                 unsigned int x[_pWords];
                 unsigned int y[_pWords];
@@ -703,10 +743,16 @@ bool RhoCUDA::doStep()
                 memset(a, 0, _pWords * sizeof(unsigned int));
                 memset(b, 0, _pWords * sizeof(unsigned int));
 
-                readXFromDevice(index, x);
-                readYFromDevice(index, y);
-                extractBigInt(_aStart, index, a);
-                extractBigInt(_bStart, index, b);
+                try {
+                    readX(x, block, thread, i);
+                    readY(y, block, thread, i);
+                } catch(cudaError_t err) {
+                    Logger::logInfo("%s", cudaGetErrorString(err));
+                    exit(1);
+                }
+
+                extractBigInt(a, _aStart, block, thread, i);
+                extractBigInt(b, _bStart, block, thread, i);
 
                 BigInteger xBig(x, _pWords);
                 BigInteger yBig(y, _pWords);
@@ -714,16 +760,16 @@ bool RhoCUDA::doStep()
                 BigInteger bBig(b, _pWords);
                 if(!verifyPoint(xBig, yBig)) {
                     Logger::logError( "==== INVALID POINT ====\n" );
-                    printf("Index: %d\n", index);
+                    Logger::logInfo("Index: %d\n", i);
                     Logger::logError("%s %s\n", aBig.toString(16).c_str(), bBig.toString(16).c_str());
                     Logger::logError("[%s, %s]\n", xBig.toString(16).c_str(), yBig.toString(16).c_str());
-                    printf("a: ");
+                    Logger::logInfo("a: ");
                     printBigInt(a, _pWords);
-                    printf("b: ");
+                    Logger::logInfo("b: ");
                     printBigInt(b, _pWords);
-                    printf("x: ");
+                    Logger::logInfo("x: ");
                     printBigInt(x, _pWords);
-                    printf("y: ");
+                    Logger::logInfo("y: ");
                     printBigInt(y, _pWords);
                     return false;
                 }
@@ -733,7 +779,7 @@ bool RhoCUDA::doStep()
                 p.bStart = bBig;
                 p.x = xBig;
                 p.y = yBig;
-                p.length = (unsigned int)(_mainCounter - _counters[index]);
+                p.length = _mainCounter - _counters[i];
 
                 _callback(&p);
                 
@@ -744,27 +790,23 @@ bool RhoCUDA::doStep()
                 getRandomPoint(newX, newY, newA, newB);
                 
                 // Write a, b to host memory
-                splatBigInt(newA, _aStart, index);
-                splatBigInt(newB, _bStart, index);
+                splatBigInt(_aStart, newA, thread, block, i);
+                splatBigInt(_bStart, newB, thread, block, i);
 
                 // Write x, y to device memory
-                writeXToDevice( newX, index );
-                writeYToDevice( newY, index );
+                writeX(newX, block, thread, i);
+                writeY(newY, block, thread, i);
 
-                _counters[index] = _mainCounter;
+                _counters[i] = _mainCounter;
             }
         }
     }
 
     return true;
-
-    //running = isRunning();
-    //iterations++;
-    //}while( running );
 }
 
 /**
- * Runs the context
+ * Runs the context. This is a blocking call.
  */
 bool RhoCUDA::run()
 {
@@ -783,58 +825,28 @@ bool RhoCUDA::benchmark(unsigned long long *pointsPerSecondPtr)
 {
     unsigned int t0 = 0;
     unsigned int t1 = 0;
-    unsigned int count = 25000;
+    unsigned int count = 1000;
     bool success = true;
     float seconds = 0;
     unsigned int iterationsPerSecond = 0;
     unsigned long long pointsPerSecond = 0;
 
-    //count = 0;
-    /*
-    while(1) {
-        cudaError_t cudaError = cudaSuccess;
-        
-        cudaError = doStep(_blocks,
-            _threadsPerBlock,
-            _devX,
-            _devY,
-            _devDiffBuf,
-            _devChainBuf,
-            _devPointFoundFlag,
-            _sectionFlags,
-            _pointFoundFlags,
-            _totalPoints,
-            _pointsInParallel); 
-
-        count++;
-        if(cudaError != cudaSuccess) {
-            Logger::logError("CUDA error: %s\n", cudaGetErrorString( cudaError ));
-            success = false;
-            goto end;
-        }
-        t1 = util::getSystemTime();
-
-        if(t1 - t0 >= 10000) {
-            break;
-        }
-    }*/
-
-
     t0 = util::getSystemTime();
     for(unsigned int i = 0; i < count; i++) {
         cudaError_t cudaError = cudaSuccess;
         
-        cudaError = cudaDoStep(_blocks,
-            _threadsPerBlock,
-            _devX,
-            _devY,
-            _devDiffBuf,
-            _devChainBuf,
-            _devPointFoundFlag,
-            _sectionFlags,
-            _pointFoundFlags,
-            _totalPoints,
-            _pointsInParallel); 
+        cudaError = cudaDoStep(
+                        _pWords,
+                        _blocks,
+                        _threadsPerBlock,
+                        _pointsPerThread,
+                        _devX,
+                        _devY,
+                        _devDiffBuf,
+                        _devChainBuf,
+                        _blockFlags,
+                        _pointFoundFlags);
+
 
         if(cudaError != cudaSuccess) {
             Logger::logError("CUDA error: %s\n", cudaGetErrorString( cudaError ));
@@ -843,14 +855,13 @@ bool RhoCUDA::benchmark(unsigned long long *pointsPerSecondPtr)
         }
 
         i++;
-        t1 = util::getSystemTime();
     }
     t1 = util::getSystemTime();
   
     // Number of seconds that elapsed 
     seconds = (float)(t1 - t0)/1000;
     iterationsPerSecond = (unsigned int)count / seconds;
-    pointsPerSecond = iterationsPerSecond * _totalPoints;
+    pointsPerSecond = iterationsPerSecond * _blocks * _threadsPerBlock * _pointsPerThread;
 
     Logger::logInfo("%d iterations in %dms (%d iterations per second)", count, (t1-t0), iterationsPerSecond);
     Logger::logInfo("%lld points per second", pointsPerSecond);

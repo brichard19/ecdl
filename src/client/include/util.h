@@ -22,6 +22,8 @@ void hexDecode(std::string hex, unsigned char *bytes);
 void printHex(unsigned long x);
 void printHex(unsigned long *x, int len);
 void getRandomBytes(unsigned char *buf, unsigned int count);
+unsigned int toInt(const unsigned char *bytes);
+void fromInt(unsigned int x, unsigned char *bytes);
 
 }
 

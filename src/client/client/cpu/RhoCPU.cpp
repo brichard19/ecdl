@@ -1,4 +1,5 @@
 #include "RhoCPU.h"
+#include "logger.h"
 
 static void copyWords(const unsigned long *src, unsigned long *dest, int n)
 {
@@ -31,7 +32,7 @@ void RhoCPU::generateStartingPoint(BigInteger &x, BigInteger &y, BigInteger &a, 
 
 }
 
-bool RhoCPU::checkDistinguishedBits(const unsigned long *x)
+bool inline RhoCPU::checkDistinguishedBits(const unsigned long *x)
 {
     if((x[ 0 ] & _dBitsMask) == 0) {
         return true;
@@ -108,7 +109,7 @@ RhoCPU::RhoCPU(const ECDLPParams *params,
     _callback = callback;
 
     // Generate starting points and exponents
-    for(int i = 0; i < _pointsInParallel; i++) {
+    for(unsigned int i = 0; i < _pointsInParallel; i++) {
         BigInteger a;
         BigInteger b;
         BigInteger x;
@@ -193,7 +194,7 @@ void RhoCPU::doStepSingle()
     if(isDistinguishedPoint || isFruitlessCycle) {
         
         if(isDistinguishedPoint) {
-            printf("Found distinguished point!\n");
+            Logger::logInfo("Found distinguished point!\n");
             // Call callback function
             if(_callback != NULL) {
                 struct CallbackParameters cp;
@@ -207,7 +208,7 @@ void RhoCPU::doStepSingle()
                 _callback(&cp);
             }
         } else {
-            printf("Possible cycle found (%lld iterations), rejecting\n", *_lengthBuf);
+            Logger::logInfo("Possible cycle found (%lld iterations), rejecting\n", *_lengthBuf);
         }
 
         // Generate new starting point
@@ -367,7 +368,6 @@ void RhoCPU::doStepMulti()
 
 void RhoCPU::doStep()
 {
-    //doStepMulti();
     if(_pointsInParallel > 1) {
         doStepMulti();
     } else {

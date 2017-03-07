@@ -6,8 +6,9 @@
 #include <curl/curl.h>
 #include "json/json.h"
 #include "ServerConnection.h"
+#include "logger.h"
 
-static std::string to_string(int x)
+static std::string toString(int x)
 {
     char str[10] = {0};
 
@@ -47,11 +48,16 @@ static int decodeStatusMsg(std::string encoded)
 
     if(statusString == "unsolved") {
         return SERVER_STATUS_RUNNING;
+    } else if(statusString == "solved") {
+        return SERVER_STATUS_STOPPED;
     }
-
-    return SERVER_STATUS_STOPPED;
+    
+    throw "Unknown status '" + statusString + "'";
 }
 
+/**
+ * Reads a BigInteger from a JSON string
+ */
 static BigInteger readBigInt(Json::Value &root, std::string field)
 {
     std::string s = root.get(field, "").asString();
@@ -97,7 +103,9 @@ static ParamsMsg decodeParametersMsg(std::string encoded)
     return paramsMsg;
 }
 
-
+/**
+ * CURL callback. Appends data string
+ */
 static size_t curlCallback(void *data, size_t size, size_t count, void *destPtr)
 {
     if(data == NULL || count == 0) {
@@ -113,9 +121,9 @@ static size_t curlCallback(void *data, size_t size, size_t count, void *destPtr)
 }
 
 
-ServerConnection::ServerConnection(std::string host, unsigned short port)
+ServerConnection::ServerConnection(std::string host, int port)
 {
-    if(port > 65535) {
+    if(port < 0 || port > 65535) {
         throw std::string("Invalid port number");
     }
 
@@ -154,7 +162,7 @@ ParamsMsg ServerConnection::getParameters(std::string id)
 
     if(httpCode != 200) {
         curl_easy_cleanup(curl);
-        throw std::string("HTTP error " + to_string(httpCode));
+        throw std::string("HTTP error " + toString(httpCode));
     }
 
     curl_easy_cleanup(curl);
@@ -194,7 +202,7 @@ void ServerConnection::submitPoints(std::string id, std::vector<DistinguishedPoi
 
     if(httpCode != 200) {
         curl_easy_cleanup(curl);
-        throw std::string("HTTP error " + to_string(httpCode));
+        throw std::string("HTTP error " + toString(httpCode));
     }
     curl_easy_cleanup(curl);
 }
@@ -228,12 +236,12 @@ int ServerConnection::getStatus(std::string id)
         curl_easy_cleanup(curl);
         throw std::string("id does not exist");
     } else if(httpCode != 200) {
-        std::string errorMsg("HTTP error " + to_string(httpCode));
+        std::string errorMsg("HTTP error " + toString(httpCode));
         curl_easy_cleanup(curl);
         throw errorMsg;
     }
 
     curl_easy_cleanup(curl);
-    
+   
     return decodeStatusMsg(result);
 }

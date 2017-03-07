@@ -12,20 +12,19 @@ typedef struct {
     const char *bpy;
 }ECParams;
 
-
 class ECPoint {
 
-private:
-    BigInteger x;
-    BigInteger y;
-
 public:
+
     ECPoint();
     ECPoint(const ECPoint &p);
     ECPoint(const BigInteger &x, const BigInteger &y);
 
-    BigInteger getX();
-    BigInteger getY();
+    BigInteger getX() const;
+    BigInteger getY() const;
+
+    BigInteger x;
+    BigInteger y;
 
     bool isPointAtInfinity();
     bool operator==(ECPoint &p);
@@ -74,15 +73,20 @@ public:
     ECPointJacobian addJacobian(ECPointJacobian &p, ECPointJacobian &q);
     ECPointJacobian doubleJacobian(ECPointJacobian &p);
 
-    BigInteger a() { return _a; };
-    BigInteger b() { return _b; };
-    BigInteger p() { return _p; };
-    BigInteger n() { return _n; };
+    BigInteger a() const { return _a; };
+    BigInteger b() const { return _b; };
+    BigInteger p() const { return _p; };
+    BigInteger n() const { return _n; };
 
     BigInteger compressPoint(ECPoint &p);
     
     bool pointExists(ECPoint &p);
+
+    ECCurve &operator=(const ECCurve &p);
 };
 
 void generateRPoints(ECCurve &curve, ECPoint &q, BigInteger *aAra, BigInteger *bAra, BigInteger *xAra, BigInteger *yAra, int n);
+void compressPoint(ECPoint &point, unsigned char *encoded);
+bool decompressPoint(const ECCurve &curve, const unsigned char *encoded, int len, ECPoint &out);
+int squareRootModP(const BigInteger &n, const BigInteger &p, BigInteger *out);
 #endif

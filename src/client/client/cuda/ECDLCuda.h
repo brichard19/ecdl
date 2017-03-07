@@ -22,7 +22,7 @@ private:
     unsigned int _blocks;
     unsigned int _threads;
     unsigned int _totalPoints;
-    int _pointsInParallel;
+    int _pointsPerThread;
     int _rPoints;
 
 public:
@@ -37,8 +37,7 @@ public:
     ECDLCudaContext( int device,
                        unsigned int blocks,
                        unsigned int threads,
-                       unsigned int totalPoints,
-                       unsigned int pointsInParallel,
+                       unsigned int pointsPerThread,
                        const ECDLPParams *params,
                        const BigInteger *rx,
                        const BigInteger *ry,

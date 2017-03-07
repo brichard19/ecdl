@@ -18,47 +18,16 @@ app.config['PROPAGATE_EXCEPTIONS'] = True
 
 jsonschema = JsonSchema(app)
 
-NUM_R_POINTS = 32
-
-# Global dictionary of contexts
-_ctx = {}
-
-
 '''
 Look up a context based on id
 '''
 def getContext(id):
-    if id in _ctx:
-        return _ctx[id]
-
-    return None
-
-'''
-Loads all the contexts into the _ctx dictionary
-'''
-def loadAllContexts():
     names = ecdl.Database.getNames()
 
-    if names == None:
-        return
+    if id in names:
+        return ecdl.loadContext(id)
 
-    for n in names:
-        print("Loading context '" + n + "'")
-        ctx = ecdl.loadContext(n)
-        _ctx[ctx.name] = ctx
-
-
-'''
-Converts a string to integer by guessing the base
-'''
-def parseInt(n):
-    return int(n, 0)
-
-'''
-Converts integer to string
-'''
-def intToString(n):
-    return str(n).rstrip("L")
+    return None
 
 '''
 Encodes ECDLP parameters as json
@@ -130,9 +99,6 @@ def create(id):
     # Create the context
     ctx = ecdl.createContext(params, id, email)
 
-    # Add context to list
-    _ctx[ctx.name] = ctx
-
     return ""
 
 '''
@@ -183,10 +149,10 @@ def submit_points(id):
     # Verify all points
     for i in range(len(content)):
         
-        a = parseInt(content[i]['a'])
-        b = parseInt(content[i]['b'])
-        x = parseInt(content[i]['x'])
-        y = parseInt(content[i]['y'])
+        a = util.parseInt(content[i]['a'])
+        b = util.parseInt(content[i]['b'])
+        x = util.parseInt(content[i]['x'])
+        y = util.parseInt(content[i]['y'])
         length = content[i]['length']
 
         # Verify the exponents are within range
@@ -239,11 +205,11 @@ def submit_points(id):
             print("==== FOUND COLLISION ====")
             print("a1:     " + hex(c['a']))
             print("b1:     " + hex(c['b']))
-            print("length: " + intToString(c['length']))
+            print("length: " + util.intToString(c['length']))
             print("")
             print("a2:     " + hex(dp['a']))
             print("b2:     " + hex(dp['b']))
-            print("length: " + intToString(dp['length']))
+            print("length: " + util.intToString(dp['length']))
             print("")
             print("x:      " + hex(c['x']))
             print("y:      " + hex(c['y']))
@@ -277,8 +243,6 @@ def main():
     except Exception as e:
         print("Error opening config file " + str(e))
         sys.exit(1)
-
-    loadAllContexts()
 
     print("Starting server")
     app.run(host = "0.0.0.0", port = ecdl.Config.port)

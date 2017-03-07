@@ -58,12 +58,12 @@ public:
 class ServerConnection {
 
 private:
-    unsigned short _port;
+    int _port;
     std::string _host;
     std::string _url;
 
 public:
-    ServerConnection(std::string host, unsigned short port=DEFAULT_PORT);
+    ServerConnection(std::string host, int port=DEFAULT_PORT);
 
     int getStatus(std::string id);
     ParamsMsg getParameters(std::string id);

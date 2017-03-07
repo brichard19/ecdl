@@ -6,7 +6,7 @@ ECCurve::ECCurve()
 {
 }
 
-ECCurve::ECCurve( ECParams &params )
+ECCurve::ECCurve(ECParams &params)
 {
     _p = BigInteger( params.p, 16 );
     _n = BigInteger( params.n, 16 );
@@ -16,7 +16,7 @@ ECCurve::ECCurve( ECParams &params )
     _bpy = BigInteger( params.bpy, 16 );
 }
 
-ECCurve::ECCurve( BigInteger p, BigInteger n, BigInteger a, BigInteger b, BigInteger bpx, BigInteger bpy )
+ECCurve::ECCurve(BigInteger p, BigInteger n, BigInteger a, BigInteger b, BigInteger bpx, BigInteger bpy)
 {
     _p = p;
     _n = n;
@@ -24,6 +24,18 @@ ECCurve::ECCurve( BigInteger p, BigInteger n, BigInteger a, BigInteger b, BigInt
     _b = b;
     _bpx = bpx;
     _bpy = bpy;
+}
+
+ECCurve& ECCurve::operator=(const ECCurve& curve)
+{
+    _p = curve._p;
+    _n = curve._n;
+    _a = curve._a;
+    _b = curve._b;
+    _bpx = curve._bpx;
+    _bpy = curve._bpx;
+
+    return *this;
 }
 
 ECPoint ECCurve::add( ECPoint &p, ECPoint &q )

@@ -259,7 +259,7 @@ template<int N> void doStepInternal(int threadId)
                     _callback(&cp);
                 }
             } else {
-                printf("Thread %d: Possible cycle found (%d iterations), rejecting\n", threadId, lengthBuf[i]);
+                Logger::logInfo("Thread %d: Possible cycle found (%d iterations), rejecting\n", threadId, lengthBuf[i]);
             }
 
             // Generate new starting point
@@ -310,7 +310,7 @@ static void doStep(int threadId) {
             doStepInternal<7>(threadId);
             break;
         default:
-            fprintf(stderr, "ERROR: COMPILE SUPPORT FOR LARGER INTEGERS\n");
+            logger::logError("ERROR: COMPILE SUPPORT FOR LARGER INTEGERS\n");
             exit(1);
             break;
     }

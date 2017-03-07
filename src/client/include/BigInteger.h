@@ -42,7 +42,10 @@ public:
     int lsb() const;
     BigInteger rshift( int n ) const;
     bool isZero() const;
-    bool operator==( const BigInteger &i ) const;
+    bool operator==(const BigInteger &i) const;
+    bool operator==(const int &i) const;
+    bool operator<(const BigInteger &i) const;
+
     bool operator!=( const BigInteger &i ) const;
     size_t getBitLength() const;
     size_t getByteLength() const;
@@ -50,10 +53,10 @@ public:
     size_t getLength32() const;
     size_t getLength64() const;
     size_t getLengthNative() const;
-    void getWords( unsigned long *words, size_t size ) const;
-    void getWords( unsigned int *words, size_t size ) const;
+    void getWords(unsigned long *words, size_t size) const;
+    void getWords(unsigned int *words, size_t size) const;
     void getWords(unsigned int *words) const;
-    void getBytes( unsigned char *bytes, size_t size ) const;
+    void getBytes(unsigned char *bytes, size_t size) const;
     bool equals( BigInteger &i ) const;
 
     BigInteger operator-(const BigInteger &i) const;
@@ -63,6 +66,10 @@ public:
     BigInteger operator*(int &i) const;
     BigInteger operator/(const BigInteger &i) const;
     BigInteger operator+=(const BigInteger &a) const;
+    BigInteger operator& (const int &i) const;
+    BigInteger operator<< (const int &i) const;
+    BigInteger operator>> (const int &i) const;
+
     //BigInteger operator=(const BigInteger &i) const;
 };
 

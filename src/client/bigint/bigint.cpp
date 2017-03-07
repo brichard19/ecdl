@@ -146,6 +146,28 @@ bool BigInteger::operator==(const BigInteger &i) const
     return false;
 }
 
+bool BigInteger::operator==(const int &i) const
+{
+    int r = mpz_cmp_si( this->e.get_mpz_t(), i);
+
+    if( r == 0 ) {
+        return true;
+    }
+
+    return false;
+}
+
+bool BigInteger::operator<(const BigInteger &i) const
+{
+    int r = mpz_cmp(this->e.get_mpz_t(), i.e.get_mpz_t());
+
+    if( r < 0) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 bool BigInteger::operator!=(const BigInteger &i) const
 {
     if (this->e != i.e) {
@@ -230,12 +252,40 @@ BigInteger BigInteger::operator*(int &i) const
     return product;
 }
 
+BigInteger BigInteger::operator&(const int &i) const
+{
+    BigInteger result;
+    result.e = this->e & i;
+
+    return result;
+}
+
 BigInteger BigInteger::operator/(const BigInteger &i) const
 {
     BigInteger quotient;
     quotient.e = this->e / i.e;
 
     return quotient;
+}
+
+BigInteger BigInteger::operator<<(const int &i) const
+{
+    BigInteger tmp;
+
+    tmp.e = this->e;
+    tmp.e <<= i;
+
+    return tmp;
+}
+
+BigInteger BigInteger::operator>>(const int &i) const
+{
+    BigInteger tmp;
+
+    tmp.e = this->e;
+    tmp.e >>= i;
+
+    return tmp;
 }
 
 std::string BigInteger::toString(int base) const

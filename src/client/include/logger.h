@@ -6,8 +6,9 @@
 class Logger {
 public:
     static void logInfo(std::string s);
-    static void logError(std::string s);
     static void logInfo(const char *format, ...);
+
+    static void logError(std::string s);
     static void logError(const char *format, ...);
 };
 

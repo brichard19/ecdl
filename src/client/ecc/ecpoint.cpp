@@ -22,12 +22,12 @@ bool ECPoint::isPointAtInfinity()
     return this->x.isZero() && this->y.isZero();
 }
 
-BigInteger ECPoint::getX()
+BigInteger ECPoint::getX() const
 {
     return this->x;
 }
 
-BigInteger ECPoint::getY()
+BigInteger ECPoint::getY() const
 {
     return this->y;
 }

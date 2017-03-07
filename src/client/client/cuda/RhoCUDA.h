@@ -4,7 +4,7 @@
 #include "ECDLContext.h"
 #include "ecc.h"
 #include "BigInteger.h"
-
+#include <cuda_runtime.h>
 
 class RhoCUDA {
 
@@ -12,10 +12,10 @@ private:
     unsigned long long _mainCounter;
     volatile bool _runFlag;
 
-    unsigned int _pointsInParallel;
-    unsigned int _totalPoints;
+    unsigned int _pointsPerThread; 
     unsigned int _blocks;
     unsigned int _threadsPerBlock;
+    unsigned int _numThreads;
     unsigned int _numRPoints;
 
     /**
@@ -24,6 +24,7 @@ private:
     unsigned int *_aStart;
     unsigned int *_bStart;
     unsigned int *_pointFoundFlags;
+    unsigned int *_blockFlags;
     unsigned long long *_counters;
 
     /**
@@ -31,10 +32,8 @@ private:
      */
     unsigned int *_devAStart;
     unsigned int *_devBStart;
-    unsigned int *_devPointFoundFlag;
+    unsigned int *_devBlockFlags;
     unsigned int *_devPointFoundFlags;
-
-    unsigned int *_sectionFlags;
 
     /**
      * Pointers to device memory
@@ -47,14 +46,13 @@ private:
     ECDLPParams _params;
     ECCurve _curve;
 
-    BigInteger _rx[ NUM_R_POINTS ];
-    BigInteger _ry[ NUM_R_POINTS ];
+    BigInteger _rx[NUM_R_POINTS];
+    BigInteger _ry[NUM_R_POINTS];
 
-    //BigInteger p;
-    unsigned int _pBits;
-    unsigned int _mBits;
-    unsigned int _pWords;
-    unsigned int _mWords;
+    int _pBits;
+    int _mBits;
+    int _pWords;
+    int _mWords;
     BigInteger _m;
 
     // The current device
@@ -63,25 +61,29 @@ private:
     
     void (*_callback)(struct CallbackParameters *);
 
-    // Copying data to/from device
-    void readXFromDevice(unsigned int index, unsigned int *x);
-    void readYFromDevice(unsigned int index, unsigned int *y);
-    void readAFromDevice(unsigned int index, unsigned int *a);
-    void readBFromDevice(unsigned int index, unsigned int *b);
-    void writeXToDevice(unsigned int *x, unsigned int index);
-    void writeYToDevice(unsigned int *y, unsigned int index);
-    void writeAToDevice(unsigned int *a, unsigned int index);
-    void writeBToDevice(unsigned int *b, unsigned int index);
-    void splatBigInt(const unsigned int *x, unsigned int *ara, int index );
-    void extractBigInt(const unsigned int *ara, int index, unsigned int *x);
-    void writeBigIntToDevice(const unsigned int *x, unsigned int *dest, unsigned int index );
-    void readBigIntFromDevice(const unsigned int *src, unsigned int index, unsigned int *x);
+    void readX(unsigned int *x, unsigned int block, unsigned int thread, unsigned int index);
+    void readY(unsigned int *y, unsigned int block, unsigned int thread, unsigned int index);
+    void readA(unsigned int *a, unsigned int block, unsigned int thread, unsigned int index);
+    void readB(unsigned int *b, unsigned int block, unsigned int thread, unsigned int index);
+
+    void writeX(const unsigned int *x, unsigned int block, unsigned int thread, unsigned int index);
+    void writeY(const unsigned int *y, unsigned int block, unsigned int thread, unsigned int index);
+    void writeA(const unsigned int *a, unsigned int block, unsigned int thread, unsigned int index);
+    void writeB(const unsigned int *b, unsigned int block, unsigned int thread, unsigned int index);
+
+    void splatBigInt(unsigned int *ara, const unsigned int *x, unsigned int block, unsigned int thread, unsigned int index );
+    void extractBigInt(unsigned int *x, const unsigned int *ara, unsigned int block, unsigned int thread, unsigned int index);
+
+    void writeBigInt(unsigned int *dest, const unsigned int *src, unsigned int block, unsigned int thread, unsigned int index);
+    void readBigInt(unsigned int *dest, const unsigned int *src, unsigned int block, unsigned int thread, unsigned int index);
+
+    unsigned int getIndex(unsigned int block, unsigned int thread, unsigned int idx);
 
     // Initializaton
     void generateLookupTable(unsigned int *gx, unsigned int *gy, unsigned int *qx, unsigned int *qy, unsigned int *gqx, unsigned int *gqy);
 
     void generateExponentsHost();
-    void generateStartingPoints();
+    void generateStartingPoints(bool doVerify = false);
     void allocateBuffers();
     void freeBuffers();
     void setupDeviceConstants();
@@ -97,22 +99,13 @@ private:
 
     bool doStep();
 
-    inline unsigned int totalThreads()
-    {
-        return _threadsPerBlock * _blocks;
-    }
-
-    inline unsigned int totalSections()
-    {
-        return (_totalPoints + 31)/32;
-    }
+    void cudaException(cudaError_t error);
 
 public:
     RhoCUDA( int device,
            unsigned int blocks,
            unsigned int threads,
-           unsigned int totalPoints,
-           unsigned int pointsInParallel,
+           unsigned int pointsPerThread,
            const ECDLPParams *params,
            const BigInteger *rx,
            const BigInteger *ry,

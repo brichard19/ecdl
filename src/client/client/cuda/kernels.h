@@ -17,8 +17,9 @@ cudaError_t copyMultiplesToDevice( const unsigned int *px,
 
 cudaError_t copyRPointsToDevice(const unsigned int *rx, const unsigned int *ry, int length, int count);
 
-cudaError_t multiplyAddG( int blocks,
-                          int threads,
+cudaError_t multiplyAddG( unsigned int blocks,
+                          unsigned int threads,
+                          unsigned int pointsPerThread,
                           const unsigned int *a,
                           const unsigned int *b,
                           const unsigned int *gx,
@@ -31,27 +32,24 @@ cudaError_t multiplyAddG( int blocks,
                           unsigned int *ry,
                           unsigned int *diffBuf,
                           unsigned int *chainBuf,
-                          unsigned int totalPoints,
-                          unsigned int pointsInParallel,
-                          int step );
+                          unsigned int step);
 
-cudaError_t resetPoints( int blocks,
-                         int threads,
+cudaError_t resetPoints( unsigned int blocks,
+                         unsigned int threads,
+                         unsigned int pointsPerThread,
                          unsigned int *rx,
-                         unsigned int *ry,
-                         int count );
+                         unsigned int *ry);
 
-cudaError_t cudaDoStep( int blocks,
+cudaError_t cudaDoStep( int pLen,
+                    int blocks,
                     int threads,
+                    int pointsPerThread,
                     unsigned int *rx,
                     unsigned int *ry,
                     unsigned int *diffBuf,
                     unsigned int *chainBuf,
-                    unsigned int *pointFound,
                     unsigned int *blockFlags,
-                    unsigned int *flags,
-                    unsigned int totalPoints,
-                    unsigned int pointsInParallel );
+                    unsigned int *pointFlags);
 
 cudaError_t initDeviceParams(const unsigned int *p, unsigned int pBits, const unsigned int *m, unsigned int mBits, unsigned int dBits);
 

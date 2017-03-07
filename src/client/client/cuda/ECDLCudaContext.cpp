@@ -12,8 +12,7 @@
 ECDLCudaContext::ECDLCudaContext( int device,
                    unsigned int blocks,
                    unsigned int threads,
-                   unsigned int totalPoints,
-                   unsigned int pointsInParallel,
+                   unsigned int pointsPerThread,
                    const ECDLPParams *params,
                    const BigInteger *rx,
                    const BigInteger *ry,
@@ -23,8 +22,7 @@ ECDLCudaContext::ECDLCudaContext( int device,
     _device = device;
     _blocks = blocks;
     _threads = threads;
-    _totalPoints = totalPoints;
-    _pointsInParallel = pointsInParallel;
+    _pointsPerThread = pointsPerThread;
     _params = *params;
 
     for(int i = 0; i < rPoints; i++) {
@@ -36,6 +34,7 @@ ECDLCudaContext::ECDLCudaContext( int device,
     _callback = callback;
 
     _rho = NULL;
+    Logger::logInfo("ECDLCudaContext created");
 }
 
 ECDLCudaContext::~ECDLCudaContext()
@@ -45,7 +44,10 @@ ECDLCudaContext::~ECDLCudaContext()
 
 bool ECDLCudaContext::init()
 {
-    _rho = new RhoCUDA(_device, _blocks, _threads, _totalPoints, _pointsInParallel, &_params, _rx, _ry, _rPoints, _callback);
+    Logger::logInfo("Creating RhoCUDA...");
+    _rho = new RhoCUDA(_device, _blocks, _threads, _pointsPerThread, &_params, _rx, _ry, _rPoints, _callback);
+    _rho->init();
+
     return true;
 }
 
@@ -77,7 +79,7 @@ bool ECDLCudaContext::benchmark(unsigned long long *pointsPerSecond)
         throw std::string("Cannot run benchmark. GPU is currently busy");
     }
 
-    RhoCUDA *r = new RhoCUDA(_device, _blocks, _threads, _totalPoints, _pointsInParallel, &_params, _rx, _ry, _rPoints, _callback);
+    RhoCUDA *r = new RhoCUDA(_device, _blocks, _threads, _pointsPerThread, &_params, _rx, _ry, _rPoints, _callback);
 
     r->init();
     r->benchmark(pointsPerSecond);

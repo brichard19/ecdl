@@ -12,6 +12,12 @@ def toHex(n):
     return hex(n).rstrip("L").lstrip("0x") or "0"
 
 '''
+Converts integer to string
+'''
+def intToString(n):
+    return str(n).rstrip("L")
+
+'''
 Generates the R points for the random walk from the ECDLP parameters
 '''
 def generateRPoints(params):

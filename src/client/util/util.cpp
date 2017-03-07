@@ -85,4 +85,23 @@ void getRandomBytes(unsigned char *buf, unsigned int count)
 }
 
 
+unsigned int toInt(const unsigned char *bytes)
+{
+    unsigned int x = 0;
+    x |= bytes[0] << 24;
+    x |= bytes[1] << 16;
+    x |= bytes[2] << 8;
+    x |= bytes[3];
+
+    return x;
+}
+
+void fromInt(unsigned int x, unsigned char *bytes)
+{
+    bytes[0] = (unsigned char)(x >> 24);
+    bytes[1] = (unsigned char)(x >> 16);
+    bytes[2] = (unsigned char)(x >> 8);
+    bytes[3] = (unsigned char)x;
+}
+
 }

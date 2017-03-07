@@ -23,7 +23,8 @@ ECDLContext *getNewContext(const ECDLPParams *params, BigInteger *rx, BigInteger
 {
     ECDLContext *ctx = NULL;
 #ifdef _CUDA
-    ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.totalPoints, _config.pointsPerThread, params, rx, ry, numRPoints, callback);
+    Logger::logInfo("Creating CUDA context...");
+    ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.pointsPerThread, params, rx, ry, numRPoints, callback);
 #endif
           
 #ifdef _CPU
@@ -32,6 +33,36 @@ ECDLContext *getNewContext(const ECDLPParams *params, BigInteger *rx, BigInteger
 
     return ctx;
 }
+
+#ifdef _CUDA
+bool cudaInit()
+{
+    CUDA::DeviceInfo devInfo;
+
+    if(CUDA::getDeviceCount() == 0) {
+        Logger::logError("No CUDA devices detected\n");
+        return false;
+    }
+
+    // Get device info
+    try {
+        CUDA::getDeviceInfo(_config.device, devInfo);
+    }catch(cudaError_t cudaError) {
+        Logger::logError("Error getting info for device %d: %s\n", _config.device, cudaGetErrorString(cudaError));
+        return false;
+    }
+  
+    Logger::logInfo("Device info:");
+    Logger::logInfo("Name:     %s", devInfo.name.c_str());
+    Logger::logInfo("version:  %d.%d", devInfo.major, devInfo.minor);
+    Logger::logInfo("MP count: %d", devInfo.mpCount);
+    Logger::logInfo("Cores:    %d", devInfo.mpCount * devInfo.cores);
+    Logger::logInfo("Memory:   %lldMB", devInfo.globalMemory/(2<<19));
+    Logger::logInfo("");
+
+    return true;
+}
+#endif
 
 
 ECDLContext *_context;
@@ -82,29 +113,22 @@ void addPointToCache(BigInteger a, BigInteger b, BigInteger x, BigInteger y, uns
     _pointsMutex.grab();
     _pointsCache.push_back(p);
     _pointsMutex.release();
-    
 }
 
 void pointFoundCallback(struct CallbackParameters *p)
 {
-    // TODO: Should be in new thread so worker thread is not blocked
-    // Check if point is valid
-    if(!verifyPoint(p->x, p->y)) {
-        printf("INVALID POINT\n");
-        printf("a: %s\n", p->aStart.toString(16).c_str());
-        printf("b: %s\n", p->bStart.toString(16).c_str());
-        printf("x: %s\n", p->x.toString(16).c_str());
-        printf("y: %s\n", p->y.toString(16).c_str());
-        printf("length: %d\n", p->length);
-        printf("\n\n" );
+    bool valid = verifyPoint(p->x, p->y);
+    
+    if(!valid) {
+        Logger::logInfo("INVALID POINT\n");
+        Logger::logInfo("a: %s", p->aStart.toString(16).c_str());
+        Logger::logInfo("b: %s", p->bStart.toString(16).c_str());
+        Logger::logInfo("x: %s", p->x.toString(16).c_str());
+        Logger::logInfo("y: %s", p->y.toString(16).c_str());
+        Logger::logInfo("length: %d", p->length);
         return;
     }
-    printf("a: %s\n", p->aStart.toString(16).c_str());
-    printf("b: %s\n", p->bStart.toString(16).c_str());
-    printf("x: %s\n", p->x.toString(16).c_str());
-    printf("y: %s\n", p->y.toString(16).c_str());
-    printf("length: %d\n", p->length);
-    printf("\n\n" );
+
     addPointToCache(p->aStart, p->bStart, p->x, p->y, p->length);
 }
 
@@ -118,7 +142,7 @@ bool getParameters(ECDLPParams &params, BigInteger *rx, BigInteger *ry)
     try {
         paramsMsg = _serverConnection->getParameters(_id);
     } catch(std::string e) {
-        printf("Error: %s\n", e.c_str()); 
+        Logger::logInfo("Error: %s\n", e.c_str()); 
         return false;
     }
 
@@ -151,30 +175,26 @@ void *sendPointsThread(void *p)
         _pointsMutex.grab();
 
         if(_pointsCache.size() >= _config.pointCacheSize) {
-            printf("Point cache size: %d\n", _config.pointCacheSize);
 
             Logger::logInfo("Sending %d points to server", _pointsCache.size());
             bool success = true;
 
             std::vector<DistinguishedPoint> points;
 
-            printf("Copying points\n");
-            //std::copy(_pointsCache.begin(), _pointsCache.begin() + _pointsCache.size(), points.begin());
             for(int i = 0; i < _pointsCache.size(); i++) {
                 points.push_back(_pointsCache[i]);
             }
 
             try {
-                printf("Sending to server\n");
+                Logger::logInfo("Sending to server\n");
                 _serverConnection->submitPoints(_id, points);
             } catch(std::string err) {
                 success = false;
-                printf("Error sending points to server: %s. Will try again later\n", err.c_str());
+                Logger::logInfo("Error sending points to server: %s. Will try again later\n", err.c_str());
             }
 
             if(success) {
                 _pointsCache.clear();
-                //_pointsCache.erase(_pointsCache.begin(), _pointsCache.begin() + _config.pointCacheSize);
             }
         }
         _pointsMutex.release();
@@ -208,7 +228,8 @@ void pollConnections()
     while(_running) {
 
         unsigned int status = 0;
-      
+     
+        Logger::logInfo("Connecting to server..."); 
         // Attempt to connect to the server 
         try {
             status = _serverConnection->getStatus(_id);
@@ -219,6 +240,8 @@ void pollConnections()
             continue;
         }
 
+        Logger::logInfo("Status = %d\n", status);
+
         // If not currently running, then get the parameters and start
         if(status == SERVER_STATUS_RUNNING) {
             if(_context == NULL) {
@@ -227,13 +250,13 @@ void pollConnections()
                 if(!getParameters(_params, _rx, _ry)) {
                     Logger::logError("Error getting the parameters from server\n");
                 } else {
-                    Logger::logInfo("Received parameters from server\n");
-                    Logger::logInfo("GF(p) = %s\n", _params.p.toString().c_str());
-                    Logger::logInfo("y^2 = x^3 + %sx + %s\n", _params.a.toString().c_str(), _params.b.toString().c_str());
-                    Logger::logInfo("n = %s\n", _params.n.toString().c_str());
-                    Logger::logInfo("G = [%s, %s]\n", _params.gx.toString().c_str(), _params.gy.toString().c_str());
-                    Logger::logInfo("Q = [%s, %s]\n", _params.qx.toString().c_str(), _params.qy.toString().c_str());
-                    Logger::logInfo("%d distinguished bits\n", _params.dBits);
+                    Logger::logInfo("Received parameters from server");
+                    Logger::logInfo("GF(p) = %s", _params.p.toString().c_str());
+                    Logger::logInfo("y^2 = x^3 + %sx + %s", _params.a.toString().c_str(), _params.b.toString().c_str());
+                    Logger::logInfo("n = %s", _params.n.toString().c_str());
+                    Logger::logInfo("G = [%s, %s]", _params.gx.toString().c_str(), _params.gy.toString().c_str());
+                    Logger::logInfo("Q = [%s, %s]", _params.qx.toString().c_str(), _params.qy.toString().c_str());
+                    Logger::logInfo("%d distinguished bits", _params.dBits);
 
                     _context = getNewContext(&_params, _rx, _ry, NUM_R_POINTS, pointFoundCallback);
                     _context->init();
@@ -243,11 +266,13 @@ void pollConnections()
             } else if(!_context->isRunning()) {
                 Thread t(runningThread, NULL);
             }
-        } else {
-            printf("Stopping\n"); 
+        } else if(status == SERVER_STATUS_STOPPED) {
+            Logger::logInfo("Stopping"); 
             if(_context != NULL) {
                 _context->stop();
+                delete _context;
             }
+            break;
         }
 
         // Sleep 5 minutes
@@ -255,35 +280,19 @@ void pollConnections()
     }
 }
 
-#ifdef _CUDA
-bool cudaInit()
+
+void enterEventLoop ()
 {
-    CUDA::DeviceInfo devInfo;
-
-    if(CUDA::getDeviceCount() == 0) {
-        Logger::logError("No CUDA devices detected\n");
-        return false;
-    }
-
-    // Get device info
+        // Enter main loop
     try {
-        CUDA::getDeviceInfo(_config.device, devInfo);
-    }catch(cudaError_t cudaError) {
-        Logger::logError("Error getting info for device %d: %s\n", _config.device, cudaGetErrorString(cudaError));
-        return false;
+        _serverConnection = new ServerConnection(_config.serverHost, _config.serverPort);
+    }catch(std::string err) {
+        Logger::logError("Error: %s", err.c_str());
+        return;
     }
-  
-    Logger::logInfo("Device info:");
-    Logger::logInfo("Name:     %s", devInfo.name.c_str());
-    Logger::logInfo("version:  %d.%d", devInfo.major, devInfo.minor);
-    Logger::logInfo("MP count: %d", devInfo.mpCount);
-    Logger::logInfo("Cores:    %d", devInfo.mpCount * devInfo.cores);
-    Logger::logInfo("Memory:   %lldMB", devInfo.globalMemory/(2<<19));
-    Logger::logInfo("");
 
-    return true;
+    pollConnections();
 }
-#endif
 
 /**
  * Program entry point
@@ -316,21 +325,14 @@ int main(int argc, char **argv)
         return 0;
     } else {
         if(argc < 2) {
-            printf("usage: [options] id\n");
+            Logger::logInfo("usage: [options] id\n");
             return 0;
         } else {
             _id = std::string(argv[1]);
         }
     }
 
-    // Enter main loop
-    try {
-        _serverConnection = new ServerConnection(_config.serverHost, _config.serverPort);
-    }catch(std::string err) {
-        Logger::logError("Error: %s\n", err.c_str());
-    }
-
-    pollConnections();
+    enterEventLoop();
 
     return 0;
 }

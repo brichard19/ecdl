@@ -2,6 +2,10 @@ from PointDatabase import PointDatabase, PointDatabaseConnection
 from util import ECDLPParams
 import util
 import MySQLdb
+import warnings
+
+# Don't display 
+warnings.filterwarnings('ignore', category = MySQLdb.Warning)
 
 ECDL_DB_NAME = 'ecdl'
 

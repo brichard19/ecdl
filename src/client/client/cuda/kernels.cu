@@ -8,8 +8,7 @@
 #define NUM_R_POINTS 32 // Must be a power of 2
 #define R_POINT_MASK (NUM_R_POINTS - 1)
 
-#define THREAD_ID (blockDim.x * blockIdx.x + threadIdx.x)
-#define NUM_THREADS (gridDim.x * blockDim.x)
+
 
 /**
  * Bit mask for identifying distinguished points
@@ -45,7 +44,7 @@ __device__ unsigned int _pointAtInfinity[10] = { 0xffffffff, 0xffffffff, 0xfffff
 template<int N> __device__ void getRX(int index, unsigned int *rx)
 {
     for(int i = 0; i < N; i++) {
-        rx[i] = _shared_rx[ 32 * i + index ];
+        rx[i] = _shared_rx[32 * i + index];
     }
 }
 
@@ -55,7 +54,7 @@ template<int N> __device__ void getRX(int index, unsigned int *rx)
 template<int N> __device__ void getRY(int index, unsigned int *ry)
 {
     for(int i = 0; i < N; i++) {
-        ry[ i ] = _shared_ry[ 32 * i + index ];
+        ry[ i ] = _shared_ry[32 * i + index];
     }
 }
 
@@ -65,7 +64,7 @@ template<int N> __device__ void getRY(int index, unsigned int *ry)
  */
 __device__ void initSharedMem(unsigned int len)
 {
-    if( threadIdx.x == 0) {
+    if(threadIdx.x == 0) {
         for(int i = 0; i < len; i++) {
             for(int j = 0; j < 32; j++) {
                 _shared_rx[i * 32 + j] = _rx[ len * j + i];
@@ -76,55 +75,53 @@ __device__ void initSharedMem(unsigned int len)
     __syncthreads();
 }
 
-template<int N> __device__ void doMultiplyStep( const unsigned int *aMultiplier, const unsigned int *bMultiplier,
+template<int N> __device__ void doMultiplyStep(const unsigned int *aMultiplier, const unsigned int *bMultiplier,
                                   const unsigned int *gx, const unsigned int *gy,
                                   const unsigned int *qx, const unsigned int *qy,
                                   const unsigned int *gqx, const unsigned int *gqy,
                                   unsigned int *xAra, unsigned int *yAra,
                                   unsigned int *diffBuf, unsigned int *chainBuf,
-                                  int step, int pointsInParallel, int idx)
+                                  int step, unsigned int pointsPerThread)
 {
-    int stride = gridDim.x * blockDim.x;
-
     unsigned int product[N] = {0};
+
     product[0] = 1;
 
     unsigned int mask = 1 << (step % 32);
     int word = step / 32;
   
-    // To compute (Px - Qx)^-1, we multiply together all the differences and then perfom
-    // a single inversion. After each multiplication we need to store the product.
-    for(int i = 0; i < pointsInParallel; i++) {
-        int offset = stride * i;
+    // To compute (Px - Qx)^-1, multiply together all the differences and then perfom
+    // a single inversion. After each multiplication, store the product.
+    for(int i = 0; i < pointsPerThread; i++) {
         unsigned int bpx[N];
         unsigned int x[N];
 
-        readBigInt<N>(xAra, idx + offset, x);
+        readBigInt<N>(xAra, i, x);
         unsigned int diff[N];
 
         // For point at infinity we set the difference as 2 so the math still
         // works out 
-        unsigned int am = readBigIntWord<N>( aMultiplier, idx + offset, word );
-        unsigned int bm = readBigIntWord<N>( bMultiplier, idx + offset, word );
+        unsigned int am = readBigIntWord<N>(aMultiplier, i, word);
+        unsigned int bm = readBigIntWord<N>(bMultiplier, i, word);
 
         if( (am | bm) & mask == 0 || equalTo<N>(x, _pointAtInfinity) ) {
             zero<N>(diff);
             diff[0] = 2;
         } else {
             if( (am & ~bm) & mask ) {
-                copy<N>(&gx[step *N], bpx);
+                copy<N>(&gx[step * N], bpx);
             } else if( (~am & bm) & mask) {
-                copy<N>(&qx[step *N], bpx);
+                copy<N>(&qx[step * N], bpx);
             } else {
-                copy<N>(&gqx[step *N], bpx);
+                copy<N>(&gqx[step * N], bpx);
             }
             subModP<N>(x, bpx, diff);
         }
 
-        writeBigInt<N>(diffBuf, idx + offset, diff);
+        writeBigInt<N>(diffBuf, i, diff);
 
         multiplyModP<N>(product, diff, product);
-        writeBigInt<N>(chainBuf, idx + offset, product);
+        writeBigInt<N>(chainBuf, i, product);
     }
 
     // Compute the inverse
@@ -132,37 +129,36 @@ template<int N> __device__ void doMultiplyStep( const unsigned int *aMultiplier,
     inverseModP<N>(product, inverse);
 
     // Multiply by the products stored perviously so that they are canceled out
-    for(int i = pointsInParallel - 1; i >= 0; i--) {
+    for(int i = pointsPerThread - 1; i >= 0; i--) {
         // Get the inverse of the last difference by multiplying the inverse of the product of all the differences
         // with the product of all but the last difference
         unsigned int invDiff[N];
         if( i >= 1) {
             unsigned int tmp[N];
-            readBigInt<N>(chainBuf, idx + stride * (i-1), tmp);
+            readBigInt<N>(chainBuf, i - 1, tmp);
             multiplyModP<N>(inverse, tmp, invDiff);
 
             // Cancel out the last difference
-            readBigInt<N>(diffBuf, idx + stride * i, tmp);
+            readBigInt<N>(diffBuf, i, tmp);
             multiplyModP<N>(inverse, tmp, inverse);
         } else {
             copy<N>(inverse, invDiff);
         }
       
-        int offset = stride * i;
-        unsigned int am = readBigIntWord<N>( aMultiplier, idx + offset, word );
-        unsigned int bm = readBigIntWord<N>( bMultiplier, idx + offset, word );
+        unsigned int am = readBigIntWord<N>( aMultiplier, i, word );
+        unsigned int bm = readBigIntWord<N>( bMultiplier, i, word );
 
-        if( (am & mask) != 0 || (bm & mask) != 0 ) {
+        if((am & mask) != 0 || (bm & mask) != 0 ) {
             unsigned int px[N];
             unsigned int py[N];
             unsigned int bpx[N];
             unsigned int bpy[N];
           
             // Select G, Q, or G+Q 
-            if( (am & ~bm) & mask ) {
+            if((am & ~bm) & mask ) {
                 copy<N>(&gx[step *N], bpx);
                 copy<N>(&gy[step *N], bpy);
-            } else if( (~am & bm) & mask) {
+            } else if((~am & bm) & mask) {
                 copy<N>(&qx[step *N], bpx);
                 copy<N>(&qy[step *N], bpy);
             } else {
@@ -171,12 +167,12 @@ template<int N> __device__ void doMultiplyStep( const unsigned int *aMultiplier,
             }
 
             // Load the current point
-            readBigInt<N>(xAra, idx + offset, px);
-            readBigInt<N>(yAra, idx + offset, py);
+            readBigInt<N>(xAra, i, px);
+            readBigInt<N>(yAra, i, py);
 
-            if( equalTo<N>( px, _pointAtInfinity ) ) {
-                writeBigInt<N>(xAra, idx + offset, bpx);
-                writeBigInt<N>(yAra, idx + offset, bpy);
+            if(equalTo<N>( px, _pointAtInfinity)) {
+                writeBigInt<N>(xAra, i, bpx);
+                writeBigInt<N>(yAra, i, bpy);
             } else {
                 unsigned int s[N];
                 unsigned int rx[N];
@@ -199,8 +195,8 @@ template<int N> __device__ void doMultiplyStep( const unsigned int *aMultiplier,
 
                 subModP<N>(k, py, ry);
 
-                writeBigInt<N>(xAra, idx + offset, rx);
-                writeBigInt<N>(yAra, idx + offset, ry);
+                writeBigInt<N>(xAra, i, rx);
+                writeBigInt<N>(yAra, i, ry);
             }
         }
     }
@@ -209,57 +205,48 @@ template<int N> __device__ void doMultiplyStep( const unsigned int *aMultiplier,
 /**
  * Based on the bit values of a and b, G, Q, or (G+Q) will be added
  */
-__global__ void startingPointGenKernel( const unsigned int *a, const unsigned int *b,
+__global__ void startingPointGenKernel(const unsigned int *a, const unsigned int *b,
                                        const unsigned int *gx, const unsigned int *gy,
                                        const unsigned int *qx, const unsigned int *qy,
                                        const unsigned int *gqx, const unsigned int *gqy,
                                        unsigned int *rx, unsigned int *ry,
                                        unsigned int *diffBuf, unsigned int *chainBuf,
-                                       int step, unsigned int totalPoints, unsigned int pointsInParallel)
+                                       int step, unsigned int pointsPerThread)
 {
-    int stride = NUM_THREADS * pointsInParallel;
-
     initFp();
     initSharedMem(_PWORDS);
 
-    for(int idx = THREAD_ID; idx < totalPoints; idx += stride) {
-
-        switch(_PWORDS) {
-            case 2:
-            doMultiplyStep<2>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break; 
-            case 3:
-            doMultiplyStep<3>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break;
-            case 4:
-            doMultiplyStep<4>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break;
-            case 5:
-            doMultiplyStep<5>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break;
-            case 6:
-            doMultiplyStep<6>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break;
-            case 7:
-            doMultiplyStep<7>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break;
-            case 8:
-            doMultiplyStep<8>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsInParallel, idx);
-            break;
-        }
+    switch(_PWORDS) {
+        case 2:
+        doMultiplyStep<2>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break; 
+        case 3:
+        doMultiplyStep<3>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break;
+        case 4:
+        doMultiplyStep<4>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break;
+        case 5:
+        doMultiplyStep<5>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break;
+        case 6:
+        doMultiplyStep<6>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break;
+        case 7:
+        doMultiplyStep<7>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break;
+        case 8:
+        doMultiplyStep<8>( a, b, gx, gy, qx, qy, gqx, gqy, rx, ry, diffBuf, chainBuf, step, pointsPerThread);
+        break;
     }
 }
 
 /**
  * Resets all points on the device to the point at infinity
  */
-__device__ void resetPointsFunc(unsigned int *rx, unsigned int *ry, int totalPoints)
+__device__ void resetPointsFunc(unsigned int *rx, unsigned int *ry, int pointsPerThread)
 {
-    // Reset all points to the identity element
-    unsigned int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-    unsigned int stride = gridDim.x * blockDim.x;
-
-    for(int i = threadId; i < totalPoints; i += stride)
+    for(int i = 0; i < pointsPerThread; i++)
     {
         writeBigInt(rx, i, _pointAtInfinity, _PWORDS);
         writeBigInt(ry, i, _pointAtInfinity, _PWORDS);
@@ -269,16 +256,16 @@ __device__ void resetPointsFunc(unsigned int *rx, unsigned int *ry, int totalPoi
 /**
  * Kernel to reset all points on the device to the point at infinity
  */
-__global__ void resetPointsKernel( unsigned int *rx, unsigned int *ry, int count)
+__global__ void resetPointsKernel( unsigned int *rx, unsigned int *ry, int pointsPerThread)
 {
-    resetPointsFunc(rx, ry, count);
+    resetPointsFunc(rx, ry, pointsPerThread);
 }
 
 
 /**
  * Sets the number of distinguished bits to look for
  */
-cudaError_t setNumDistinguishedBits(unsigned int dBits)
+static cudaError_t setNumDistinguishedBits(unsigned int dBits)
 {
     unsigned int mask[2] = {0xffffffff, 0xffffffff};
     if(dBits > 32) {
@@ -357,7 +344,7 @@ static void addInt(const unsigned int *a, const unsigned int *b, unsigned int *c
 /**
  * Set parameters for the prime field library
  */
-cudaError_t setFpParameters(const unsigned int *pPtr, unsigned int pBits, const unsigned int *mPtr, unsigned int mBits)
+static cudaError_t setFpParameters(const unsigned int *pPtr, unsigned int pBits, const unsigned int *mPtr, unsigned int mBits)
 {
     cudaError_t cudaError = cudaSuccess;
     unsigned int pWords = (pBits + 31) / 32;
@@ -456,12 +443,12 @@ cudaError_t copyRPointsToDevice(const unsigned int *rx, const unsigned int *ry, 
     cudaError_t cudaError = cudaSuccess;
     size_t size = sizeof(unsigned int) * length * count;
 
-    cudaError = cudaMemcpyToSymbol( _rx, rx, size, 0, cudaMemcpyHostToDevice );
+    cudaError = cudaMemcpyToSymbol(_rx, rx, size, 0, cudaMemcpyHostToDevice );
     if( cudaError != cudaSuccess ) {
         goto end;
     }
 
-    cudaError = cudaMemcpyToSymbol( _ry, ry, size, 0, cudaMemcpyHostToDevice );
+    cudaError = cudaMemcpyToSymbol(_ry, ry, size, 0, cudaMemcpyHostToDevice );
     if( cudaError != cudaSuccess ) {
         goto end;
     }
@@ -470,25 +457,25 @@ end:
     return cudaError;
 }
 
-cudaError_t multiplyAddG( int blocks, int threads,
+cudaError_t multiplyAddG(unsigned int blocks, unsigned int threads, unsigned int pointsPerThread,
                           const unsigned int *a, const unsigned int *b,
                           const unsigned int *gx, const unsigned int *gy,
                           const unsigned int *qx, const unsigned int *qy,
                           const unsigned int *gqx, const unsigned int *gqy,
                           unsigned int *x, unsigned int *y,
                           unsigned int *diffBuf, unsigned int *chainBuf,
-                          unsigned int totalPoints, unsigned int pointsInParallel, int step)
+                          unsigned int step)
 {
-    startingPointGenKernel<<<blocks, threads>>>(a, b, gx, gy, qx, qy, gqx, gqy, x, y, diffBuf, chainBuf, step, totalPoints, pointsInParallel);
+    startingPointGenKernel<<<blocks, threads>>>(a, b, gx, gy, qx, qy, gqx, gqy, x, y, diffBuf, chainBuf, step, pointsPerThread);
     return cudaDeviceSynchronize();
 }
 
 /**
  * Reset all points to point at infinity
  */
-cudaError_t resetPoints( int blocks, int threads, unsigned int *rx, unsigned int *ry, int count )
+cudaError_t resetPoints(unsigned int blocks, unsigned int threads, unsigned int pointsPerThread, unsigned int *rx, unsigned int *ry)
 {
-    resetPointsKernel<<<blocks, threads>>>(rx, ry, count);
+    resetPointsKernel<<<blocks, threads>>>(rx, ry, pointsPerThread);
     return cudaDeviceSynchronize();
 }
 
@@ -500,34 +487,23 @@ void __device__ cuPrintBigInt(const unsigned int *x, int len)
     printf("\n");
 }
 
-
-template<int N> __device__ void doStepMulti(
+template<int N> __device__ void doStep(
                             unsigned int *xAra,
                             unsigned int *yAra,
                             unsigned int *diffBuf,
                             unsigned int *chainBuf,
-                            unsigned int *pointFound,
-                            unsigned int *sectionFlags,
-                            unsigned int *flags,
-                            unsigned int pointsInParallel,
-                            unsigned int idx) {
-
-    int stride = gridDim.x * blockDim.x;
+                            unsigned int *blockFlags,
+                            unsigned int *pointFlags,
+                            unsigned int pointsInParallel) {
 
     // Initalize to 1
     unsigned int product[N] = {0};
     product[0] = 1;
 
-    // Reset the point found flag
-    if( blockIdx.x == 0 && threadIdx.x == 0 ) {
-        *pointFound = 0;
-    }
-
     // Multiply differences together
     for(int i = 0; i < pointsInParallel; i++) {
-        unsigned int offset = stride * i;
         unsigned int x[N];
-        readBigInt<N>(xAra, idx + offset, x);
+        readBigInt<N>(xAra, i, x);
         unsigned int rIdx = x[0] & R_POINT_MASK;
 
         unsigned int diff[N];
@@ -535,10 +511,10 @@ template<int N> __device__ void doStepMulti(
         getRX<N>(rIdx, rx);
         subModP<N>(x, rx, diff);
 
-        writeBigInt<N>(diffBuf, idx + offset, diff);
+        writeBigInt<N>(diffBuf, i, diff);
 
         multiplyModP<N>(product, diff, product);
-        writeBigInt<N>(chainBuf, idx + offset, product);
+        writeBigInt<N>(chainBuf, i, product);
     }
 
     // Compute inverse
@@ -547,7 +523,6 @@ template<int N> __device__ void doStepMulti(
 
     // Extract inverse of the differences
     for(int i = pointsInParallel - 1; i >= 0; i--) {
-        unsigned int offset = stride * i; 
 
         // Get the inverse of the last difference by multiplying the inverse of the product of all the differences
         // with the product of all but the last difference
@@ -555,11 +530,11 @@ template<int N> __device__ void doStepMulti(
 
         if(i >= 1) {
             unsigned int tmp[N];
-            readBigInt<N>(chainBuf, idx + stride * (i-1), tmp);
+            readBigInt<N>(chainBuf, i-1, tmp);
             multiplyModP<N>(inverse, tmp, invDiff);
 
             // Cancel out the last difference
-            readBigInt<N>(diffBuf, idx + stride * i, tmp);
+            readBigInt<N>(diffBuf, i, tmp);
             multiplyModP<N>(inverse, tmp, inverse);
 
         } else {
@@ -569,8 +544,8 @@ template<int N> __device__ void doStepMulti(
         unsigned int px[N];
         unsigned int py[N];
 
-        readBigInt<N>(xAra, idx + offset, px);
-        readBigInt<N>(yAra, idx + offset, py);
+        readBigInt<N>(xAra, i, px);
+        readBigInt<N>(yAra, i, py);
 
         unsigned int rIdx = px[0] & R_POINT_MASK;
         unsigned int s[N];
@@ -598,62 +573,30 @@ template<int N> __device__ void doStepMulti(
         unsigned int newY[N];
         subModP<N>(k, py, newY);
 
-        // Write resul to memory
-        writeBigInt<N>(xAra, idx + offset, newX);
-        writeBigInt<N>(yAra, idx + offset, newY);
+        // Write result to memory
+        writeBigInt<N>(xAra, i, newX);
+        writeBigInt<N>(yAra, i, newY);
        
         // Check for distinguished point, set flag if found
         if(((newX[ 0 ] & _MASK[ 0 ]) == 0) && ((newX[ 1 ] & _MASK[ 1 ]) == 0)) {
-            int section = (idx + offset) / 32;
-            sectionFlags[section] = 1;
-            *pointFound = 1;
-            flags[idx + offset] = 1;
+            blockFlags[blockIdx.x] = 1;
+            pointFlags[gridDim.x * blockDim.x * i + blockIdx.x * blockDim.x + threadIdx.x] = 1;
         }
     }
 }
 
-__global__ void doStepKernel( unsigned int *xAra,
+template<int N> __global__ void doStepKernel( unsigned int *xAra,
                               unsigned int *yAra,
                               unsigned int *diffBuf,
                               unsigned int *chainBuf,
-                              unsigned int *pointFound,
                               unsigned int *blockFlags,
-                              unsigned int *flags,
-                              unsigned int totalPoints,
-                              unsigned int pointsInParallel )
+                              unsigned int *pointFlags,
+                              unsigned int pointsPerThread)
 {
-    int stride = NUM_THREADS * pointsInParallel;
-
     // Initialize shared memory constants
     initFp();
     initSharedMem(_PWORDS);
-
-    for(int idx = THREAD_ID; idx < totalPoints; idx += stride) {
-
-        switch(_PWORDS) {
-            case 2:
-            doStepMulti<2>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-            case 3:
-            doStepMulti<3>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-            case 4:
-            doStepMulti<4>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-            case 5:
-            doStepMulti<5>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-            case 6:
-            doStepMulti<6>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-            case 7:
-            doStepMulti<7>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-            case 8:
-            doStepMulti<8>(xAra, yAra, diffBuf, chainBuf, pointFound, blockFlags, flags, pointsInParallel, idx);
-            break;
-        }
-    }
+    doStep<N>(xAra, yAra, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
 }
 
 cudaError_t initDeviceConstants(unsigned int numPoints)
@@ -670,26 +613,46 @@ end:
     return cudaSuccess;
 }
 
-cudaError_t cudaDoStep( int blocks,
+cudaError_t cudaDoStep(int pLen,
+                    int blocks,
                     int threads,
+                    int pointsPerThread,
                     unsigned int *rx,
                     unsigned int *ry,
                     unsigned int *diffBuf,
                     unsigned int *chainBuf,
-                    unsigned int *pointFound,
-                    unsigned int *pointIndex,
-                    unsigned int *flags,
-                    unsigned int totalPoints,
-                    unsigned int pointsInParallel)
+                    unsigned int *blockFlags,
+                    unsigned int *pointFlags)
 {
-    doStepKernel<<<blocks, threads>>>(rx,
-                                      ry,
-                                      diffBuf,
-                                      chainBuf,
-                                      pointFound,
-                                      pointIndex,
-                                      flags,
-                                      totalPoints,
-                                      pointsInParallel);
+    switch(pLen) {
+        case 1:
+            doStepKernel<1><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 2:
+            doStepKernel<2><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 3:
+            doStepKernel<3><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 4:
+            doStepKernel<4><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 5:
+            doStepKernel<5><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 6:
+            doStepKernel<6><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 7:
+            doStepKernel<7><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        case 8:
+            doStepKernel<8><<<blocks, threads>>>(rx, ry, diffBuf, chainBuf, blockFlags, pointFlags, pointsPerThread);
+            break;
+        default:
+            throw "Unsupported word size";
+
+    }
+
     return cudaDeviceSynchronize();
 }

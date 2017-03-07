@@ -17,6 +17,23 @@ static const int bits[] = {
     64, 96, 128, 160, 192, 224
 };
 
+#define CURVE_64 0
+#define CURVE_96 1
+#define CURVE_128 2
+#define CURVE_160 3
+#define CURVE_192 4
+#define CURVE_224 5
+
+#define PARAM_P 0
+#define PARAM_A 1
+#define PARAM_B 2 
+#define PARAM_N 3
+
+#define PARAM_GX 4
+#define PARAM_GY 5
+#define PARAM_QX 6
+#define PARAM_QY 7
+
 static const char *_paramStrings[][8] = {
     {
         "10346548290527483921", // p
@@ -122,12 +139,13 @@ void doBenchmark()
 
         Logger::logInfo("Running benchmark for %d-bit prime curve\n", bits[i]);
         #ifdef _CUDA
-        ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.totalPoints, _config.pointsPerThread, &params, rx, ry, 32, NULL);
+        ctx = new ECDLCudaContext(_config.device, _config.blocks, _config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
         #else
         ctx = new ECDLCpuContext(_config.threads, _config.pointsPerThread, &params, rx, ry, 32, NULL);
         #endif
         //ctx->init();
         ctx->benchmark(NULL);
+        fflush(stdout);
         delete ctx;
     }
 
