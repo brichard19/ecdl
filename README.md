@@ -5,11 +5,9 @@ This is an implementation of the parallel Pollard's rho algorithm, applied to th
 It solves the ECDLP for curves over a prime field, in Weierstrass form `Y^2 = X^3 + aX + b`
 
 It consists of a central server program and a client program. The client program can be run on many machines to help solve
-the problem faster. The client requests work from the server and sends back any distinguished points it finds.
-The server collects the points and stores them in a database. When two colliding points are found, the problem
-can be solved.
+the problem faster. The client requests work from the server and sends back the results.
 
-It is still a very new project and no doubt has many bugs.
+It is not a mature project yet, so watch out for bugs.
 
 #### Dependencies
 
@@ -52,6 +50,12 @@ To build the CUDA client:
 
 #### Running the server
 
+The server consists of two programs: `server.py` and `solver.py`.
+
+`server.py` is whats clients connect to when they request work.
+
+`solver.py` waits until a collision is found in the database and then attempts to solve the discrete logarithm
+
 There is a server config file `config/config.json` which needs to be edited
 
 ```
@@ -63,10 +67,17 @@ There is a server config file `config/config.json` which needs to be edited
 }
 ```
 
-The server is run using the `python` command
+```
+Both programs are run using `python`:
+```
+
 
 ```
 # python server.py
+```
+
+```
+# python solver.py
 ```
 
 
@@ -136,8 +147,6 @@ After a job has been set up on the server, the client can be run. It takes the j
 
 #### Solving
 
-Currently there is a manual step involved. This will be fixed in the future.
-
 When the server finds two colliding distinguished points, it will output them to stdout like this:
 
 ```
@@ -153,32 +162,29 @@ y: 0x71d04a7b43448
 
 ```
 
-To check if this is a solution, plug these values into the `solve.py` program.
+If `solver.py` is running, it will detect the collision and attempt to find the solution.
 
-```
-# python python solve.py 0x55bd5461e01ade 0x3a1c06b8843ff7 0x2ab615a84ce098 0x39fe7a74c5175a 0x64355cd6200000 0x71d04a7b43448 ecp56
-```
 
 The output will look something like this:
 ```
-Counting walk 1 length
+Counting walk #1 length
 Found endpoint
-391036
-Counting walk 2 length
+1410541
+Counting walk #2 length
 Found endpoint
-297364
+1380960
 Checking for Robin Hood
 Not a Robin Hood :)
-Stepping 93672 times
+Stepping 29581 times
 Searching for collision
 Found collision!
-0x3547e3e36752e8 0x25d6f02438168 0x1a8454e115340bL 0x9df3a3469de720L
-0x90ce1fd597aa72 0xd25379c576bfe 0x1a8454e115340bL 0x9df3a3469de720L
-Q=   0x5136e72ea9c95a 0x999eb1108ab4f
-kG = 0x5136e72ea9c95aL 0x999eb1108ab4fL
+0x3547e3e36752e8 0x25d6f02438168 0x1a8454e115340b 0x9df3a3469de720
+0x90ce1fd597aa72 0xd25379c576bfe 0x1a8454e115340b 0x9df3a3469de720
+Verification successful
+The solution is 77fc86a17007
 
-k=0x77fc86a17007L
 ```
+
 #### Choosing the number of distinguished bits
 
 The number of distinguished bits determines the trade-off between space and running time of the algorithm.
@@ -187,22 +193,9 @@ The value to choose depends on the amount of storage available, number of proces
 
 A naive collision search on a curve of order `2^n` requires `2^(n/2)` storage and `(2^(n/2))/m` time for `m` processors.
 
-Using the distinguished point technique, the search requires `(2^(n/2))/(2^(n/2-d))` storage and `((2^(n/2))/m + 2.5 * 2^d)t` time for `d`
-distinguished bits and `m` processors, and `t` is the time for a single point addition. Note that this is including the time it takes for
-the collison to be detected and solved using the script above.
+Using the distinguished point technique, the search requires `(2^(n/2-d)` storage and `((2^(n/2))/m + 2.5 * 2^d)t` time where `d` is the number of distinguished bits, `m` is the number of processors and `t` is the time it takes to perform 1 point addition. Note that this is including the time it takes for the collison to be detected and solved on the server.
 
 For example, to solve the discrete logarithm on a curve with an order of `~2^80`, it would require about `2^40` points to find a collision.
 
 If using a 24-bit distinguisher, then you will need to find about `2^16` distinguished points. On 128 processors where each processor can do 1 million point additions per second, the running time would be approximately `(2^40 / 128 + 2.5 * 2^24)0.000001` = 2.3 hours.
-
-
-### CPU vs GPU
-
-A CPU is made of a few very fast cores. A GPU is made of hundreds of slow cores.
-
-The parallel rho attack works by iterating a random walk until a distinguished point is found.
-
-CPUs can run a few very fast walks in parallel, (millions of iterations per second).
-
-GPUs can run hundreds of walks in parallel, but only a few thousand iterations per second. 
 
