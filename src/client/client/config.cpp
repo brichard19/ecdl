@@ -21,8 +21,8 @@ ClientConfig loadConfig(std::string fileName)
     ClientConfig configObj;
     ConfigFile config = ConfigFile::parse(fileName);
 
-    configObj.serverHost = config.get("server_host").asString();
-    configObj.serverPort = config.get("server_port").asInt();
+    configObj.serverHost = config.get("server_host", "").asString();
+    configObj.serverPort = config.get("server_port", "-1").asInt();
     configObj.pointCacheSize = config.get("point_cache_size").asInt();
 
 #ifdef _CUDA

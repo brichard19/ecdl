@@ -19,7 +19,7 @@ cpu_lib:
 	make --directory cpu
 
 client_cpu: cpu_lib	json_lib fp_test
-	${CXX} -o client-cpu ${CPPSRC} jsoncpp.o ${INCLUDE} ${LIBS} ${CXXFLAGS} -D_CPU -I./ -Icpu cpu/cpu.a -lbigint -lsha256 -lutil -lecc -lgmp -llogger -lthread -lpthread -lcurl -ltle
+	${CXX} -o client-cpu ${CPPSRC} jsoncpp.o ${INCLUDE} ${LIBS} ${CXXFLAGS} -D_CPU -I./ -Icpu cpu/cpu.a -lbigint -lsha256 -lutil -lecc -lgmp -llogger -lthread -lpthread -lcurl -ltle -lconfigfile
 
 fp_test:	cpu_lib
 	${CXX} -o fp_test.bin fp_test.cpp ${INCLUDE} ${LIBS} -Icpu/math -Icpu/math/gmp cpu/cpu.a -lbigint -lgmp -lutil
