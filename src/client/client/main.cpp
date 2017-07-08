@@ -283,7 +283,7 @@ void pollConnections()
 
 void enterEventLoop ()
 {
-        // Enter main loop
+    // Enter main loop
     try {
         _serverConnection = new ServerConnection(_config.serverHost, _config.serverPort);
     }catch(std::string err) {

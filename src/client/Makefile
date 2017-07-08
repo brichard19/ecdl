@@ -54,6 +54,7 @@ sha256:	client_sha256
 util:	client_util
 ecdb:	client_ecdb
 tests:	client_tests
+config: client_config
 
 client_bigint:
 	make --directory bigint
@@ -73,7 +74,7 @@ client_threads:
 client_util:
 	make --directory util
 
-client_cuda:    client_bigint client_ecc client_logger client_threads client_util client_tle client_sha256
+client_cuda:    client_bigint client_ecc client_logger client_threads client_util client_tle client_sha256 client_config
 	make --directory client client_cuda
 
 client_cpu:    client_bigint client_ecc client_logger client_threads client_util client_tle client_sha256
@@ -81,6 +82,9 @@ client_cpu:    client_bigint client_ecc client_logger client_threads client_util
 
 client_sha256:
 	make --directory sha256
+
+client_config:
+	make --directory config
 
 client_ecdb: client_bigint
 	make --directory ecdb
@@ -95,4 +99,5 @@ clean:
 	make --directory logger clean
 	make --directory util clean
 	make --directory threads clean
+	make --directory config clean
 	rm -rf ${LIBDIR}

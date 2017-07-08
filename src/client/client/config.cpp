@@ -1,6 +1,7 @@
 #include <fstream>
 #include "client.h"
 #include "json/json.h"
+#include "Config.h"
 
 static std::string readFile(std::string fileName)
 {
@@ -17,30 +18,22 @@ static std::string readFile(std::string fileName)
 
 ClientConfig loadConfig(std::string fileName)
 {
-    Json::Value root;
-    Json::Reader reader;
     ClientConfig configObj;
+    ConfigFile config = ConfigFile::parse(fileName);
 
-    std::string content = readFile(fileName);
-
-    if(!reader.parse(content, root)) {
-        std::string err = "Error parsing config file: " + reader.getFormattedErrorMessages();
-        throw err;
-    }
-
-    configObj.serverHost = root.get("server_host", "").asString();
-    configObj.serverPort = root.get("server_port", -1).asInt();
-    configObj.pointCacheSize = root.get("point_cache_size", 4).asInt();
+    configObj.serverHost = config.get("server_host").asString();
+    configObj.serverPort = config.get("server_port").asInt();
+    configObj.pointCacheSize = config.get("point_cache_size").asInt();
 
 #ifdef _CUDA
-    configObj.threads = root.get("cuda_threads", 32).asInt();
-    configObj.blocks = root.get("cuda_blocks", 1).asInt();
-    configObj.pointsPerThread = root.get("cuda_points_per_thread", 1).asInt();
-    configObj.device = root.get("cuda_device", -1).asInt();
-    configObj.pointCacheSize = root.get("point_cache_size", 4).asInt();
+    configObj.threads = config.get("cuda_threads", "32").asInt();
+    configObj.blocks = config.get("cuda_blocks", "1").asInt();
+    configObj.pointsPerThread = config.get("cuda_points_per_thread").asInt();
+    configObj.device = config.get("cuda_device").asInt();
+    configObj.pointCacheSize = config.get("point_cache_size", "4").asInt();
 #else
-    configObj.threads = root.get("cpu_threads", -1).asInt();
-    configObj.pointsPerThread = root.get("cpu_points_per_thread", -1).asInt();
+    configObj.threads = config.get("cpu_threads", "-1").asInt();
+    configObj.pointsPerThread = config.get("cpu_points_per_thread", "-1").asInt();
 #endif
 
     return configObj;

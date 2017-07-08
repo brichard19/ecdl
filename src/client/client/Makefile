@@ -13,7 +13,7 @@ json_lib:
 	${CXX} -c jsoncpp.cpp -o jsoncpp.o -O2 -I./
 
 client_cuda: cuda_lib json_lib
-	${CXX} -o client-cuda ${CPPSRC} jsoncpp.o ${INCLUDE} ${LIBS} ${CXXFLAGS} -D_CUDA -I./ -Icuda cuda/cuda.a -L${CUDA_LIB} -I${CUDA_INCLUDE} -lbigint -lutil -lecc -lgmp -llogger -lsha256 -lthread -lpthread -lcudart -lcurl -ltle
+	${CXX} -o client-cuda ${CPPSRC} jsoncpp.o ${INCLUDE} ${LIBS} ${CXXFLAGS} -D_CUDA -I./ -Icuda cuda/cuda.a -L${CUDA_LIB} -I${CUDA_INCLUDE} -lbigint -lutil -lecc -lgmp -llogger -lsha256 -lthread -lpthread -lcudart -lcurl -ltle -lconfigfile
 
 cpu_lib:
 	make --directory cpu
